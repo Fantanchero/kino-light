@@ -85,6 +85,8 @@ internal class CompositeSource(private val sources: () -> List<ContentSource>) :
 
     override suspend fun seasonsOf(ref: String): List<SeasonRef> = sourceFor(ref).seasonsOf(ref)
 
+    override suspend fun movieImdbId(ref: String): String? = sourceFor(ref).movieImdbId(ref)
+
     private fun sourceFor(ref: String): ContentSource =
         sources().firstOrNull { it.recognizes(ref) }
             ?: throw GatewayException("No hay ninguna fuente que sepa abrir esto")

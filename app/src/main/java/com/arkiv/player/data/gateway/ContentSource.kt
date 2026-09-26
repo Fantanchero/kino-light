@@ -50,6 +50,13 @@ interface ContentSource {
     suspend fun seasonsOf(ref: String): List<SeasonRef> = emptyList()
 
     /**
+     * The IMDb id (`tt1234567`) of the MOVIE [ref], when the source publishes one, else null. It is
+     * the only EXACT way to find the same film in TMDB: a series already carries it in
+     * [GatewaySeries]. A default, so sources with no such id (Caracol, plugins) answer null.
+     */
+    suspend fun movieImdbId(ref: String): String? = null
+
+    /**
      * One page of a source's "Ver más" listing: [ref] is what a Home row or a page named, [cursor]
      * null for the first page. Only plugins that declare `browse` implement it; Magis and Caracol
      * keep this default and are never asked.

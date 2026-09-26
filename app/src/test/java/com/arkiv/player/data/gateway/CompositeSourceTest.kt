@@ -43,6 +43,22 @@ class CompositeSourceTest {
             resolved = ref
             return listOf(GatewayEpisode(1, "Cap", ref)) to null
         }
+
+        override suspend fun movieImdbId(ref: String): String? = "tt-$name".takeIf { imdbAnswers }
+        var imdbAnswers = true
+    }
+
+    @Test fun `movieImdbId goes to the source that recognizes the ref`() = runTest {
+        val a = FakeSource("a", "a:")
+        val b = FakeSource("b", "b:")
+
+        assertEquals("tt-b", CompositeSource(listOf(a, b)).movieImdbId("b:7"))
+    }
+
+    @Test fun `a source that publishes no IMDb id answers null`() = runTest {
+        val a = FakeSource("a", "a:").also { it.imdbAnswers = false }
+
+        assertEquals(null, CompositeSource(listOf(a)).movieImdbId("a:7"))
     }
 
     @Test fun `both sources' results arrive`() = runTest {
