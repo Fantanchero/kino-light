@@ -93,6 +93,7 @@ import com.arkiv.player.ui.theme.ArkivBlack
 import com.arkiv.player.ui.theme.ArkivRed
 import com.arkiv.player.ui.theme.ArkivSurfaceHigh
 import com.arkiv.player.ui.theme.ArkivTextSecondary
+import com.arkiv.player.ui.titleinfo.titleRoute
 import kotlinx.coroutines.launch
 
 /**
@@ -159,9 +160,6 @@ fun SearchScreen(
     // whether a movie's dialog offers "Descargar película". See `DownloadSource.hasStrategy`.
     val magisDownloadable = remember { DownloadSource.hasStrategy("magis", graph.downloadStrategies.keys) }
     val caracolDownloadable = remember { DownloadSource.hasStrategy("ditu", graph.downloadStrategies.keys) }
-    // Open Magis season: a series result from the portal IS a whole season, so its chapter list
-    // opens instead of playing it directly.
-    var magisSeason by remember { mutableStateOf<com.arkiv.player.data.gateway.GatewayResult?>(null) }
     // Magis movie that was tapped: instead of playing right away, ask whether to watch or download.
     var magisMovieChoice by remember { mutableStateOf<MagisTapDecision.ShowMovieDialog?>(null) }
     // Open Caracol series: same as Magis, chapters are picked before playing. It's SEPARATE state
@@ -227,15 +225,11 @@ fun SearchScreen(
     }
 
     fun playMagisResult(r: com.arkiv.player.data.gateway.GatewayResult) {
-        // Series → open the season dialog to pick a chapter, same as always. Movie → play it
-        // directly now: the watch-or-download choice (`decideMagisTap`, MagisTapDecision.kt)
-        // moved to long-press (see `longPressResult`) -- asking on every single tap got in the
-        // way when someone's just browsing to watch, and a movie only has that ONE thing to pick
-        // between watching or downloading it (a series still opens its own list first either way).
-        when (val decision = decideMagisTap(r, magisDownloadable)) {
-            is MagisTapDecision.OpenSeasonDialog -> magisSeason = decision.result
-            is MagisTapDecision.ShowMovieDialog -> watchMagisMovie(r)
-        }
+        // Every Magis title, movie or series, opens its info page: from there the person plays,
+        // picks a chapter or downloads. The watch-or-download dialog stays on long-press (see
+        // `longPressResult`), a shortcut that skips the page for a movie.
+        val route = titleRoute(r)
+        if (route != null) onOpenDetail(route) else playError = "No se pudo abrir este título."
     }
 
     fun playDituResult(source: PlaySource.Ditu) {
@@ -372,38 +366,6 @@ fun SearchScreen(
                 if (choice.canDownload) {
                     TextButton(onClick = { magisMovieChoice = null; downloadMagisMovie(r) }) {
                         Text("Descargar película")
-                    }
-                }
-            },
-        )
-    }
-
-    magisSeason?.let { season ->
-        com.arkiv.player.ui.catalog.MagisSeasonDialog(
-            season = season,
-            client = graph.contentSource,
-            onDismiss = { magisSeason = null },
-            onPlay = { chapters, chapter, series ->
-                magisSeason = null
-                preparing = true; playError = null
-                scope.launch { applyResult(playback.playMagisSeason(season, chapters, chapter, series)) }
-            },
-            onSave = { _, chosen, series ->
-                askNotifications()
-                scope.launch {
-                    // Saved chapter by chapter: each one is a separate file on the CDN and the
-                    // queue already knows how to group by series to show them together in Descargas.
-                    var queued = 0
-                    for (chapter in chosen) {
-                        val epId = playback.magisEpisodeIdFor(season, chapter, series) ?: continue
-                        if (graph.localDownloads.enqueue(epId, "magis") ==
-                            com.arkiv.player.data.local.EnqueueOutcome.QUEUED
-                        ) queued++
-                    }
-                    playError = when {
-                        queued == 0 -> "Esos capítulos ya estaban guardados."
-                        queued == chosen.size -> null
-                        else -> "Se encolaron $queued de ${chosen.size} (el resto ya estaba)."
                     }
                 }
             },
