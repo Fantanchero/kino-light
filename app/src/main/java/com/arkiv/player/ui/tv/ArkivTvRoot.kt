@@ -33,6 +33,7 @@ import com.arkiv.player.ui.rememberGraph
 import com.arkiv.player.ui.theme.ArkivBlack
 import com.arkiv.player.ui.titleinfo.TITLE_ROUTE
 import com.arkiv.player.ui.titleinfo.titleItemFrom
+import com.arkiv.player.ui.titleinfo.titleOriginFrom
 import com.arkiv.player.ui.titleinfo.titleRoute
 import com.arkiv.player.ui.titleinfo.titleRouteArguments
 
@@ -188,14 +189,18 @@ fun ArkivTvRoot(
             )
         }
         composable(TITLE_ROUTE, arguments = titleRouteArguments) { entry ->
-            val item = titleItemFrom { entry.arguments?.getString(it) }
+            val arg = { name: String -> entry.arguments?.getString(name) }
+            val item = titleItemFrom(arg)
             if (item != null) {
                 TvTitleInfoScreen(
                     item = item,
+                    origin = titleOriginFrom(arg),
                     onPlay = { goToPlayer(it) },
                     onConfigurePlugin = { id -> navController.navigate("plugin_config/${Uri.encode(id)}") },
                     onBack = { navController.popBackStack() },
                 )
+            } else {
+                LaunchedEffect(Unit) { navController.popBackStack() }
             }
         }
         composable("categorias_home") {

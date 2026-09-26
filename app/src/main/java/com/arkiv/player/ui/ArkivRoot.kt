@@ -74,6 +74,7 @@ import com.arkiv.player.ui.theme.ArkivRed
 import com.arkiv.player.ui.titleinfo.TITLE_ROUTE
 import com.arkiv.player.ui.titleinfo.TitleInfoScreen
 import com.arkiv.player.ui.titleinfo.titleItemFrom
+import com.arkiv.player.ui.titleinfo.titleOriginFrom
 import com.arkiv.player.ui.titleinfo.titleRoute
 import com.arkiv.player.ui.titleinfo.titleRouteArguments
 
@@ -436,14 +437,19 @@ fun ArkivRoot(
                 )
             }
             composable(TITLE_ROUTE, arguments = titleRouteArguments) { entry ->
-                val item = titleItemFrom { entry.arguments?.getString(it) }
+                val arg = { name: String -> entry.arguments?.getString(name) }
+                val item = titleItemFrom(arg)
                 if (item != null) {
                     TitleInfoScreen(
                         item = item,
+                        origin = titleOriginFrom(arg),
                         onBack = { navController.popBackStack() },
                         onPlay = { playEpisode(it) },
                         onConfigurePlugin = { id -> navController.navigate("plugin_config/${Uri.encode(id)}") },
                     )
+                } else {
+                    // A corrupt or foreign route: never leave a blank screen on the stack.
+                    LaunchedEffect(Unit) { navController.popBackStack() }
                 }
             }
             composable("player/{episodeId}") { entry ->

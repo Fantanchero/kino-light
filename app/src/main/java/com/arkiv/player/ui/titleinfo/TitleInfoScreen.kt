@@ -92,6 +92,7 @@ private data class PendingAction(val episodeId: String, val chapterName: String?
 @Composable
 fun TitleInfoScreen(
     item: CatalogItem,
+    origin: TitleOrigin,
     onBack: () -> Unit,
     onPlay: (episodeId: String) -> Unit,
     onConfigurePlugin: (pluginId: String) -> Unit,
@@ -100,7 +101,7 @@ fun TitleInfoScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val vm: TitleInfoViewModel = viewModel(
-        factory = viewModelFactory { initializer { titleInfoViewModel(graph, item, magisTitleSource(graph)) } },
+        factory = viewModelFactory { initializer { titleInfoViewModel(graph, item, titleSourceFor(graph, origin)) } },
     )
     val state by vm.state.collectAsStateWithLifecycle()
     // Back from Configurar: ask again, with the new settings (the plugin's own Ver más does the same).
@@ -151,6 +152,14 @@ fun TitleInfoScreen(
                     Column(Modifier.padding(horizontal = 16.dp)) {
                         info.metaLine().takeIf { it.isNotBlank() }?.let {
                             Text(it, style = MaterialTheme.typography.bodyMedium, color = ArkivTextSecondary)
+                        }
+                        state.source.badge?.let { badge ->
+                            Text(
+                                "Desde ${badge.label}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Color(badge.colorArgb),
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
                         }
                         Spacer(Modifier.height(16.dp))
                         PrimaryButton(state = state, onClick = { vm.play() })
@@ -210,7 +219,7 @@ fun TitleInfoScreen(
                         is EpisodesState.Failed -> item(key = "failed") {
                             FailedBlock(episodes.message, episodes.setupPluginId, onRetry = vm::retry, onConfigure = onConfigurePlugin)
                         }
-                        is EpisodesState.Loaded -> items(episodes.chapters, key = { it.number }) { chapter ->
+                        is EpisodesState.Loaded -> items(state.visibleChapters, key = { it.listKey }) { chapter ->
                             val id = state.chapterEpisodeId(chapter)
                             EpisodeRow(
                                 chapter = chapter,
@@ -364,7 +373,12 @@ private fun SeasonHeader(
     onSelect: (SeasonRef) -> Unit,
     onDownloadSeason: () -> Unit,
 ) {
-    val header = seasonHeader(state.info.seasonNumber, state.info.episodeCount)
+    val current = state.currentSeason
+    val header = if (current != null) {
+        seasonHeader(current, state.visibleChapters.size)
+    } else {
+        seasonHeader(state.info.seasonNumber, state.info.episodeCount)
+    }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 24.dp, bottom = 4.dp),
@@ -377,7 +391,12 @@ private fun SeasonHeader(
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { onMenu(false) }) {
                     state.seasons.forEach { season ->
                         DropdownMenuItem(
-                            text = { Text("Temporada ${season.number}") },
+                            text = {
+                                Text(
+                                    "Temporada ${season.number}",
+                                    fontWeight = if (state.isCurrentSeason(season)) FontWeight.Bold else FontWeight.Normal,
+                                )
+                            },
                             onClick = { onMenu(false); onSelect(season) },
                         )
                     }
@@ -459,13 +478,14 @@ private fun EpisodeRow(
         if (progress?.watched == true) {
             Icon(Icons.Filled.CheckCircle, contentDescription = "Vista", tint = ArkivTextSecondary)
         }
-        DownloadControl(
-            state = download,
-            onDownload = onDownload,
-            onRetry = onRetry,
-            onRequestAction = onRequestAction,
-            enabled = downloadEnabled,
-        )
+        if (downloadEnabled) {
+            DownloadControl(
+                state = download,
+                onDownload = onDownload,
+                onRetry = onRetry,
+                onRequestAction = onRequestAction,
+            )
+        }
     }
 }
 

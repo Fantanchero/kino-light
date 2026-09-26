@@ -55,14 +55,17 @@ import com.arkiv.player.ui.titleinfo.TitleInfo
 import com.arkiv.player.ui.titleinfo.TitleInfoEvent
 import com.arkiv.player.ui.titleinfo.TitleInfoViewModel
 import com.arkiv.player.ui.titleinfo.TitleKind
+import com.arkiv.player.ui.titleinfo.TitleOrigin
 import com.arkiv.player.ui.titleinfo.chapterLine
 import com.arkiv.player.ui.titleinfo.chapterName
 import com.arkiv.player.ui.titleinfo.chapterNumberLabel
 import com.arkiv.player.ui.titleinfo.creditLines
 import com.arkiv.player.ui.titleinfo.kindLine
 import com.arkiv.player.ui.titleinfo.metaLine
-import com.arkiv.player.ui.titleinfo.magisTitleSource
+import com.arkiv.player.ui.titleinfo.labelSeason
+import com.arkiv.player.ui.titleinfo.listKey
 import com.arkiv.player.ui.titleinfo.titleInfoViewModel
+import com.arkiv.player.ui.titleinfo.titleSourceFor
 
 /** "★ 7.9 · 2026 · 1 h 43 min  ·  Drama, Romance": the metadata line plus the genres. */
 private fun tvMetaLine(info: TitleInfo): String =
@@ -85,6 +88,7 @@ internal fun isComposedItem(visibleKeys: List<Any>, key: Any?): Boolean = key !=
 @Composable
 fun TvTitleInfoScreen(
     item: CatalogItem,
+    origin: TitleOrigin,
     onPlay: (episodeId: String) -> Unit,
     onConfigurePlugin: (pluginId: String) -> Unit,
     onBack: () -> Unit,
@@ -93,7 +97,7 @@ fun TvTitleInfoScreen(
     val graph = rememberGraph()
     val context = LocalContext.current
     val vm: TitleInfoViewModel = viewModel(
-        factory = viewModelFactory { initializer { titleInfoViewModel(graph, item, magisTitleSource(graph)) } },
+        factory = viewModelFactory { initializer { titleInfoViewModel(graph, item, titleSourceFor(graph, origin)) } },
     )
     val state by vm.state.collectAsStateWithLifecycle()
     // Back from Configurar: ask again, with the new settings (the plugin's own Ver más does the same).
@@ -126,16 +130,16 @@ fun TvTitleInfoScreen(
     // Explicit focus destinations are only safe while their target is composed (see
     // [isComposedItem]); both lists scroll, so ask at the moment of the key press, not at composition.
     fun resumeCardComposed() =
-        isComposedItem(carouselState.layoutInfo.visibleItemsInfo.map { it.key }, primary?.chapterNumber)
+        isComposedItem(carouselState.layoutInfo.visibleItemsInfo.map { it.key }, primary?.listKey)
     fun firstChipComposed() =
         isComposedItem(chipsState.layoutInfo.visibleItemsInfo.map { it.key }, state.seasons.firstOrNull()?.contentId)
 
     // The carousel opens on the chapter the main button plays, once per load. Keyed on the season
     // and on whether chapters exist, NOT on the button's target: that changes every time progress
     // is saved and would yank the carousel around when the person comes back from the player.
-    LaunchedEffect(state.item.id, chapters.isNotEmpty()) {
-        val index = chapters.indexOfFirst { primary?.plays(it) == true }
-        if (index >= 0) carouselState.scrollToItem(index)
+    LaunchedEffect(state.item.id, chapters.isNotEmpty(), state.currentSeason) {
+        val index = state.visibleChapters.indexOfFirst { primary?.plays(it) == true }
+        carouselState.scrollToItem(index.coerceAtLeast(0))
     }
     // Focus starts on the main button as soon as it can take it: at once for a movie, when the
     // chapters arrive for a series. `runCatching` because the requester may not be attached yet. Only
@@ -188,7 +192,11 @@ fun TvTitleInfoScreen(
                         overflow = TextOverflow.Ellipsis,
                     )
                 } else {
-                    Text(info.kindLine(), style = MaterialTheme.typography.labelLarge, color = ArkivTextSecondary)
+                    Text(
+                        listOfNotNull(info.kindLine(), state.source.badge?.label).joinToString("  ·  "),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = ArkivTextSecondary,
+                    )
                 }
                 Text(
                     focused?.let { chapterName(it) ?: "Episodio ${it.number}" } ?: info.title,
@@ -197,7 +205,7 @@ fun TvTitleInfoScreen(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                val meta = if (focused != null) chapterNumberLabel(info.seasonNumber, focused.number) else tvMetaLine(info)
+                val meta = if (focused != null) chapterNumberLabel(focused.labelSeason(info.seasonNumber), focused.number) else tvMetaLine(info)
                 if (meta.isNotBlank()) {
                     Text(
                         meta,
@@ -293,7 +301,7 @@ fun TvTitleInfoScreen(
                         itemsIndexed(state.seasons, key = { _, season -> season.contentId }) { index, season ->
                             TvSourceChip(
                                 label = "Temporada ${season.number}",
-                                selected = season.contentId == state.item.id,
+                                selected = state.isCurrentSeason(season),
                                 onClick = { vm.selectSeason(season) },
                                 modifier = if (index == 0) {
                                     Modifier.focusRequester(firstSeasonFR).focusProperties {
@@ -342,11 +350,11 @@ fun TvTitleInfoScreen(
                             contentPadding = PaddingValues(horizontal = 48.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            items(episodes.chapters, key = { it.number }) { chapter ->
+                            items(state.visibleChapters, key = { it.listKey }) { chapter ->
                                 val id = state.chapterEpisodeId(chapter)
                                 val chapterProgress = state.progress[id]
                                 TvEpisodeCard(
-                                    numberLabel = chapterNumberLabel(info.seasonNumber, chapter.number),
+                                    numberLabel = chapterNumberLabel(chapter.labelSeason(info.seasonNumber), chapter.number),
                                     contentDescription = chapterLine(chapter),
                                     // Magis chapters carry no duration: the minutes stay hidden.
                                     durationMin = 0,
