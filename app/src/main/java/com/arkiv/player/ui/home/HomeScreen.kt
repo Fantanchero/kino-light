@@ -117,6 +117,8 @@ private fun homeSizes(): HomeSizes =
 fun HomeScreen(
     onOpenItem: (String) -> Unit,
     onPlayEpisode: (String) -> Unit,
+    /** A Magis card was tapped: open its info page. */
+    onOpenTitle: (com.arkiv.player.data.gateway.CatalogItem) -> Unit,
     /** Plays a live channel directly (channel code), without going through the "En vivo" tab. */
     onPlayLive: (String) -> Unit,
     /** Opens the "En vivo" tab with the full grid (channel row's last card). */
@@ -145,7 +147,7 @@ fun HomeScreen(
     val magisRows by vm.magisRows.collectAsStateWithLifecycle()
     val pluginRows by vm.pluginRows.collectAsStateWithLifecycle()
     val seedsExhausted by graph.seedsExhausted.collectAsStateWithLifecycle()
-    val magisActions = rememberMagisActions(onPlay = onPlayEpisode)
+    val magisActions = rememberMagisActions(onPlay = onPlayEpisode, onOpenTitle = onOpenTitle)
     val openPlugin = rememberPluginOpener(onPlay = onPlayEpisode)
     val scope = rememberCoroutineScope()
     // Card whose long-press menu is open: null = no menu. Long-pressing any Magis card (a row's
@@ -489,7 +491,7 @@ fun HomeScreen(
             onDismiss = { menuItem = null },
             onPlay = {
                 menuItem = null
-                magisActions.open(item)
+                magisActions.play(item)
             },
             onDownload = {
                 menuItem = null

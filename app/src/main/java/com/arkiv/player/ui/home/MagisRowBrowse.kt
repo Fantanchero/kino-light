@@ -71,7 +71,7 @@ class MagisRowBrowseViewModel(
 fun MagisRowBrowseScreen(
     rowId: String,
     title: String,
-    onPlay: (episodeId: String) -> Unit,
+    onOpenTitle: (com.arkiv.player.data.gateway.CatalogItem) -> Unit,
     onBack: () -> Unit,
 ) {
     val graph = rememberGraph()
@@ -80,7 +80,6 @@ fun MagisRowBrowseScreen(
         factory = viewModelFactory { initializer { MagisRowBrowseViewModel(rowId, graph.magisHomeCatalog) } },
     )
     val items by vm.items.collectAsStateWithLifecycle()
-    val open = rememberMagisOpener(onPlay)
 
     Scaffold(
         topBar = {
@@ -122,7 +121,7 @@ fun MagisRowBrowseScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 items(loaded, key = { it.id }) { item ->
-                    PosterCard(title = item.title, imageUrl = item.poster, onClick = { open(item) })
+                    PosterCard(title = item.title, imageUrl = item.poster, onClick = { onOpenTitle(item) })
                 }
             }
         }

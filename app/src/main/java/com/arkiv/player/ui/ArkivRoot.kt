@@ -71,6 +71,11 @@ import com.arkiv.player.ui.search.SearchScreen
 import com.arkiv.player.ui.settings.SettingsScreen
 import com.arkiv.player.ui.theme.ArkivBlack
 import com.arkiv.player.ui.theme.ArkivRed
+import com.arkiv.player.ui.titleinfo.TITLE_ROUTE
+import com.arkiv.player.ui.titleinfo.TitleInfoScreen
+import com.arkiv.player.ui.titleinfo.titleItemFrom
+import com.arkiv.player.ui.titleinfo.titleRoute
+import com.arkiv.player.ui.titleinfo.titleRouteArguments
 
 private data class Tab(val route: String, val label: String, val icon: @Composable () -> Unit)
 
@@ -272,6 +277,7 @@ fun ArkivRoot(
                 HomeScreen(
                     onOpenItem = { navController.navigate("detail/${Uri.encode(it)}") },
                     onPlayEpisode = { playEpisode(it) },
+                    onOpenTitle = { item -> titleRoute(item)?.let { route -> navController.navigate(route) } },
                     onPlayLive = { code -> goToLiveChannel(code) },
                     // "Ver más canales": the same options as tapping the "En vivo" tab below, so it
                     // shows marked as selected and the back stack doesn't grow from entering here.
@@ -429,6 +435,16 @@ fun ArkivRoot(
                     onPlayEpisode = { playEpisode(it) },
                 )
             }
+            composable(TITLE_ROUTE, arguments = titleRouteArguments) { entry ->
+                val item = titleItemFrom { entry.arguments?.getString(it) }
+                if (item != null) {
+                    TitleInfoScreen(
+                        item = item,
+                        onBack = { navController.popBackStack() },
+                        onPlay = { playEpisode(it) },
+                    )
+                }
+            }
             composable("player/{episodeId}") { entry ->
                 val episodeId = Uri.decode(entry.arguments?.getString("episodeId").orEmpty())
                 val itemId = episodeId.substringBefore("::")
@@ -491,7 +507,7 @@ fun ArkivRoot(
                 com.arkiv.player.ui.home.MagisRowBrowseScreen(
                     rowId = entry.arguments?.getString("rowId").orEmpty(),
                     title = entry.arguments?.getString("title").orEmpty(),
-                    onPlay = { playEpisode(it) },
+                    onOpenTitle = { item -> titleRoute(item)?.let { route -> navController.navigate(route) } },
                     onBack = { navController.popBackStack() },
                 )
             }
