@@ -159,6 +159,33 @@ private const val HERO_DRIFT_MS = 14_000
  */
 internal fun showForYouRow(recommendations: List<RecommendationEntity>): Boolean = recommendations.isNotEmpty()
 
+/** The key a Home card is restored by (`returnKey`): one format for the card and the row lookup. */
+internal fun magisCardKey(rowId: String, itemId: String) = "$rowId-$itemId"
+
+internal fun pluginCardKey(pluginId: String, rowId: String, itemId: String?) = "plugin-$pluginId-$rowId-$itemId"
+
+/**
+ * Index, in the Home rows list, of the row that holds the card [cardKey] (one list of card keys per
+ * Magis / plugin row), or null when no row holds it or the list is not laid out yet. The list closes
+ * with the Magis rows, then the plugin rows, then [trailingItems] pad items, and what comes before
+ * varies (continue watching, channels...), so the index counts back from [totalItems]. Pure so it
+ * can be tested without Compose.
+ */
+internal fun homeRowIndexOf(
+    cardKey: String,
+    magisCards: List<List<String>>,
+    pluginCards: List<List<String>>,
+    totalItems: Int,
+    trailingItems: Int = 1,
+): Int? {
+    val pluginBase = totalItems - trailingItems - pluginCards.size
+    val magisBase = pluginBase - magisCards.size
+    if (magisBase < 0) return null
+    pluginCards.indexOfFirst { cardKey in it }.takeIf { it >= 0 }?.let { return pluginBase + it }
+    magisCards.indexOfFirst { cardKey in it }.takeIf { it >= 0 }?.let { return magisBase + it }
+    return null
+}
+
 /**
  * What the hero shows on focusing a "Para ti" card: the "why" the gateway brings goes in
  * [Featured.meta] -- the same spot where "Continuar viendo" puts "te faltan 12 min" -- because
@@ -531,6 +558,16 @@ fun TvHomeScreen(
                 if (cardRestored) return@repeat
                 if (runCatching { returnFocus.requestFocus() }.isSuccess) {
                     cardRestored = true
+                    // The card can be composed without its row being on screen (a row the list only
+                    // prefetched): focus is on it and nothing shows it. Bring the row to the top.
+                    homeRowIndexOf(
+                        cardToRestore,
+                        magisCards = magisRows.orEmpty().map { r -> r.shown.map { magisCardKey(r.id, it.id) } },
+                        pluginCards = pluginRows.map { r ->
+                            r.items.map { pluginCardKey(r.pluginId, r.id, it.extra["pluginItemId"]) }
+                        },
+                        totalItems = rowsListState.layoutInfo.totalItemsCount,
+                    )?.let { runCatching { rowsListState.scrollToItem(it) } }
                     return@repeat
                 }
                 val last = (rowsListState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
@@ -912,7 +949,7 @@ fun TvHomeScreen(
                                     items(row.shown, key = { "${row.id}-${it.id}" }) { item ->
                                         // The portal's 1920×1080 landscape art; the portrait icon only if missing.
                                         val art = item.backdrop ?: item.poster
-                                        val cardKey = "${row.id}-${item.id}"
+                                        val cardKey = magisCardKey(row.id, item.id)
                                         TvLandscapeCard(
                                             title = item.title,
                                             imageUrl = art,
@@ -955,7 +992,7 @@ fun TvHomeScreen(
                                 ) {
                                     items(row.items, key = { "${row.pluginId}-${row.id}-${it.extra["pluginItemId"]}" }) { item ->
                                         val art = item.extra["backdrop"].orEmpty().ifBlank { item.extra["poster"].orEmpty() }.ifBlank { null }
-                                        val cardKey = "plugin-${row.pluginId}-${row.id}-${item.extra["pluginItemId"]}"
+                                        val cardKey = pluginCardKey(row.pluginId, row.id, item.extra["pluginItemId"])
                                         TvLandscapeCard(
                                             title = item.title,
                                             imageUrl = art,
