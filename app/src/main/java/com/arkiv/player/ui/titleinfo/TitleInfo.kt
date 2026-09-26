@@ -33,7 +33,7 @@ data class TitleInfo(
     val runtimeMinutes: Int = 0,
     val episodeCount: Int = 0,
     val seasonNumber: Int? = null,
-    // What only TMDB knows (see [withTmdb]); empty until it answers, or when it cannot be matched.
+    /** What only TMDB knows (see [withTmdb]); empty until it answers, or when it cannot be matched. */
     val tagline: String = "",
     /** A movie's directors, or a series' creators. */
     val directors: List<String> = emptyList(),
@@ -148,8 +148,15 @@ fun chapterNumberLabel(season: Int?, number: Int): String =
  */
 val GatewayEpisode.seasonOrOne: Int get() = (season ?: 1).coerceAtLeast(1)
 
-/** The chapter's key in the page's lists: unique across seasons even when a source repeats numbers. */
-val GatewayEpisode.listKey: String get() = "$seasonOrOne-$number"
+/**
+ * The key of the chapter numbered [number] in [season] in the page's lists: unique across seasons
+ * even when a source repeats numbers. One format for a chapter ([listKey]) and for the main button's
+ * target ([PrimaryAction.listKey]), which the TV focus guard compares.
+ */
+fun chapterListKey(season: Int, number: Int): String = "$season-$number"
+
+/** The chapter's key in the page's lists (see [chapterListKey]). */
+val GatewayEpisode.listKey: String get() = chapterListKey(seasonOrOne, number)
 
 /** The season to print next to this chapter: its own when the source gave one, else [fallback]. */
 fun GatewayEpisode.labelSeason(fallback: Int?): Int? = season?.let { seasonOrOne } ?: fallback

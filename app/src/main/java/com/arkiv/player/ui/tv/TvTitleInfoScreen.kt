@@ -81,7 +81,7 @@ private fun tvMetaLine(info: TitleInfo): String =
 internal fun isComposedItem(visibleKeys: List<Any>, key: Any?): Boolean = key != null && key in visibleKeys
 
 /**
- * The information page a Magis title opens on the TV, in the same visual language as
+ * The information page a Magis or plugin title opens on the TV, in the same visual language as
  * [TvDetailScreen] (which is for library items). Everything comes from [TitleInfoViewModel].
  */
 @OptIn(ExperimentalTvMaterial3Api::class)

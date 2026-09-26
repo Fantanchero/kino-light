@@ -16,7 +16,7 @@ data class PrimaryAction(val label: String, val chapterNumber: Int?, val season:
         chapter.number == chapterNumber && (season == null || chapter.seasonOrOne == season)
 
     /** The target's key in the page's lists (see [GatewayEpisode.listKey]); null when there is none. */
-    val listKey: String? get() = chapterNumber?.let { "${season ?: 1}-$it" }
+    val listKey: String? get() = chapterNumber?.let { chapterListKey(season ?: 1, it) }
 }
 
 /**

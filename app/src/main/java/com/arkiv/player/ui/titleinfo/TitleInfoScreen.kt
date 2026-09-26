@@ -82,7 +82,7 @@ import kotlinx.coroutines.launch
 private data class PendingAction(val episodeId: String, val chapterName: String?, val action: DownloadAction)
 
 /**
- * The information page a Magis title opens on the phone: backdrop and title, the main button, a
+ * The information page a Magis or plugin title opens on the phone: backdrop and title, the main button, a
  * download button (movies), genres and synopsis, and for a series the season header and its
  * chapters. Everything comes from [TitleInfoViewModel]; this only draws it.
  *

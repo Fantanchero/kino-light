@@ -4,7 +4,7 @@ import com.arkiv.player.data.gateway.CatalogItem
 import com.arkiv.player.data.gateway.GatewayResult
 import com.arkiv.player.data.magis.MagisRef
 import com.arkiv.player.data.plugin.PluginRef
-import java.net.URLDecoder
+import java.io.ByteArrayOutputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -13,13 +13,32 @@ import org.junit.Test
 
 class TitleRouteTest {
 
-    /** What Navigation does with a route: split path and query, URL-decode each value. */
+    /**
+     * Android's `Uri.decode`, which is what Navigation applies to an argument: percent escapes only,
+     * a `+` stays a `+`. (`URLDecoder` would turn it into a space and hide a space encoded as `+`.)
+     */
+    private fun uriDecode(value: String): String {
+        val bytes = ByteArrayOutputStream()
+        var i = 0
+        while (i < value.length) {
+            if (value[i] == '%' && i + 2 < value.length) {
+                bytes.write(value.substring(i + 1, i + 3).toInt(16))
+                i += 3
+            } else {
+                bytes.write(value[i].code)
+                i++
+            }
+        }
+        return bytes.toString("UTF-8")
+    }
+
+    /** What Navigation does with a route: split path and query, decode each value like Android does. */
     private fun argsOf(route: String): Map<String, String> {
         val (path, query) = route.split("?", limit = 2).let { it[0] to it.getOrElse(1) { "" } }
-        val out = mutableMapOf("id" to URLDecoder.decode(path.removePrefix("title/"), "UTF-8"))
+        val out = mutableMapOf("id" to uriDecode(path.removePrefix("title/")))
         query.split("&").filter { it.isNotEmpty() }.forEach { pair ->
             val (k, v) = pair.split("=", limit = 2).let { it[0] to it.getOrElse(1) { "" } }
-            out[k] = URLDecoder.decode(v, "UTF-8")
+            out[k] = uriDecode(v)
         }
         return out
     }
@@ -50,6 +69,16 @@ class TitleRouteTest {
         val out = roundTrip(base(title = nasty, description = nasty))!!
         assertEquals(nasty, out.title)
         assertEquals(nasty, out.description)
+    }
+
+    @Test
+    fun `a space travels as a percent escape, never as a plus`() {
+        // Android leaves a '+' in an argument as a '+': a space encoded that way would come back as one.
+        val route = titleRoute(base(title = "Dos palabras", description = "a b c"))!!
+        assertFalse(route, route.contains('+'))
+        val out = roundTrip(base(title = "Dos palabras", description = "a b c"))!!
+        assertEquals("Dos palabras", out.title)
+        assertEquals("a b c", out.description)
     }
 
     @Test

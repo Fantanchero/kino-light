@@ -122,6 +122,22 @@ class TitleInfoViewModelInListTest {
     }
 
     @Test
+    fun `tapping seasons in quick succession ends on the last one and asks nothing`() = runTest {
+        val content = ListContent(threeSeasons)
+        val vm = vm(content = content)
+        advanceUntilIdle()
+        val before = content.requests
+        vm.selectSeason(SeasonRef("1", 1))
+        vm.selectSeason(SeasonRef("3", 3))
+        vm.selectSeason(SeasonRef("2", 2))
+        vm.selectSeason(SeasonRef("3", 3))
+        advanceUntilIdle()
+        assertEquals(3, vm.state.value.currentSeason)
+        assertEquals(listOf(3), vm.state.value.visibleChapters.map { it.seasonOrOne }.distinct())
+        assertEquals("an in-list switch is a state change, never a request", before, content.requests)
+    }
+
+    @Test
     fun `a single season shows no selector`() = runTest {
         val vm = vm(content = ListContent(listOf(ch(1, 1), ch(1, 2))))
         advanceUntilIdle()
