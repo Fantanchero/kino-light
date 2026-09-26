@@ -74,7 +74,7 @@ import com.arkiv.player.ui.live.countryChannelsForHome
 import com.arkiv.player.ui.live.recentChannelsForHome
 import com.arkiv.player.ui.live.homeChannelsRow
 import com.arkiv.player.ui.isLandscapeTablet
-import com.arkiv.player.ui.plugin.rememberPluginOpener
+import com.arkiv.player.ui.titleinfo.rememberTitleOpener
 import com.arkiv.player.ui.rememberGraph
 import com.arkiv.player.ui.theme.ArkivBlack
 import com.arkiv.player.ui.theme.ArkivRed
@@ -119,6 +119,7 @@ fun HomeScreen(
     onPlayEpisode: (String) -> Unit,
     /** A Magis card was tapped: open its info page. */
     onOpenTitle: (com.arkiv.player.data.gateway.CatalogItem) -> Unit,
+    onOpenTitleRoute: (String) -> Unit,
     /** Plays a live channel directly (channel code), without going through the "En vivo" tab. */
     onPlayLive: (String) -> Unit,
     /** Opens the "En vivo" tab with the full grid (channel row's last card). */
@@ -148,7 +149,7 @@ fun HomeScreen(
     val pluginRows by vm.pluginRows.collectAsStateWithLifecycle()
     val seedsExhausted by graph.seedsExhausted.collectAsStateWithLifecycle()
     val magisActions = rememberMagisActions(onPlay = onPlayEpisode, onOpenTitle = onOpenTitle)
-    val openPlugin = rememberPluginOpener(onPlay = onPlayEpisode)
+    val openPlugin = rememberTitleOpener(onOpenRoute = onOpenTitleRoute)
     val scope = rememberCoroutineScope()
     // Card whose long-press menu is open: null = no menu. Long-pressing any Magis card (a row's
     // poster or the hero) opens the sheet below to watch OR download it -- the same choice the

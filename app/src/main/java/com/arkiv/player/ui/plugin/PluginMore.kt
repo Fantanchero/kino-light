@@ -120,7 +120,7 @@ class PluginMoreViewModel(
 @Composable
 fun PluginMoreScreen(
     target: PluginMoreTarget,
-    onPlayEpisode: (episodeId: String) -> Unit,
+    onOpenTitleRoute: (String) -> Unit,
     onOpenPluginSettings: (pluginId: String) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -130,7 +130,7 @@ fun PluginMoreScreen(
         factory = viewModelFactory { initializer { PluginMoreViewModel(target, graph) } },
     )
     val state by vm.state.collectAsStateWithLifecycle()
-    val open = rememberPluginOpener(onPlay = onPlayEpisode)
+    val open = com.arkiv.player.ui.titleinfo.rememberTitleOpener(onOpenRoute = onOpenTitleRoute)
     // Back from Configurar: ask again, with the new settings.
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
         if (vm.state.value.setupPluginId != null) vm.loadMore()

@@ -279,6 +279,7 @@ fun ArkivRoot(
                     onOpenItem = { navController.navigate("detail/${Uri.encode(it)}") },
                     onPlayEpisode = { playEpisode(it) },
                     onOpenTitle = { item -> titleRoute(item)?.let { route -> navController.navigate(route) { launchSingleTop = true } } },
+                    onOpenTitleRoute = { route -> navController.navigate(route) { launchSingleTop = true } },
                     onPlayLive = { code -> goToLiveChannel(code) },
                     // "Ver más canales": the same options as tapping the "En vivo" tab below, so it
                     // shows marked as selected and the back stack doesn't grow from entering here.
@@ -491,7 +492,7 @@ fun ArkivRoot(
                 if (target != null) {
                     com.arkiv.player.ui.plugin.PluginMoreScreen(
                         target = target,
-                        onPlayEpisode = { playEpisode(it) },
+                        onOpenTitleRoute = { route -> navController.navigate(route) { launchSingleTop = true } },
                         onOpenPluginSettings = { id -> navController.navigate("plugin_config/${Uri.encode(id)}") },
                         onBack = { navController.popBackStack() },
                     )

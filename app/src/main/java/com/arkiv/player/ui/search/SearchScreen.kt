@@ -93,6 +93,7 @@ import com.arkiv.player.ui.theme.ArkivBlack
 import com.arkiv.player.ui.theme.ArkivRed
 import com.arkiv.player.ui.theme.ArkivSurfaceHigh
 import com.arkiv.player.ui.theme.ArkivTextSecondary
+import com.arkiv.player.ui.titleinfo.TITLE_OPEN_ERROR
 import com.arkiv.player.ui.titleinfo.titleRoute
 import kotlinx.coroutines.launch
 
@@ -166,8 +167,6 @@ fun SearchScreen(
     // from Magis's on purpose: what's tapped in its window only ever reaches
     // `playback.playDituSeason`, so a Caracol chapter never falls into Magis's save path.
     var dituSeason by remember { mutableStateOf<com.arkiv.player.data.gateway.GatewayResult?>(null) }
-    // Open plugin series: same path as Caracol, saved through `playback.playPluginSeason`.
-    var pluginSeason by remember { mutableStateOf<PlaySource.Plugin?>(null) }
 
     // Shortcut from the home: enters already positioned on a title. Fires only once per arg
     // combination (LaunchedEffect doesn't re-run on recompositions with no changes), and
@@ -196,7 +195,7 @@ fun SearchScreen(
         }
     }
 
-    // Plays the movie exactly like playMagisResult used to before this dialog existed: same path,
+    // Plays the movie exactly as tapping the card did before the info page existed: same path,
     // just triggered from "Ver película" instead of directly on tapping the card.
     fun watchMagisMovie(r: com.arkiv.player.data.gateway.GatewayResult) {
         preparing = true; playError = null
@@ -224,12 +223,12 @@ fun SearchScreen(
         }
     }
 
-    fun playMagisResult(r: com.arkiv.player.data.gateway.GatewayResult) {
-        // Every Magis title, movie or series, opens its info page: from there the person plays,
-        // picks a chapter or downloads. The watch-or-download dialog stays on long-press (see
-        // `longPressResult`), a shortcut that skips the page for a movie.
+    fun openTitleResult(r: com.arkiv.player.data.gateway.GatewayResult) {
+        // Every Magis or plugin title, movie or series, opens its info page: from there the person
+        // plays or picks a chapter (Magis also downloads). The watch-or-download dialog stays on
+        // long-press (see `longPressResult`), a shortcut that skips the page for a Magis movie.
         val route = titleRoute(r)
-        if (route != null) onOpenDetail(route) else playError = "No se pudo abrir este título."
+        if (route != null) onOpenDetail(route) else playError = TITLE_OPEN_ERROR
     }
 
     fun playDituResult(source: PlaySource.Ditu) {
@@ -239,17 +238,10 @@ fun SearchScreen(
         scope.launch { applyResult(playback.playDitu(source.result)) }
     }
 
-    fun playPluginResult(source: PlaySource.Plugin) {
-        // Same as Caracol: a series opens its chapters, a movie plays (and stays in the library).
-        if (source.isSeries()) { pluginSeason = source; return }
-        preparing = true; playError = null
-        scope.launch { applyResult(playback.playPlugin(source.result)) }
-    }
-
     fun playResult(source: PlaySource) = when (source) {
-        is PlaySource.Magis -> playMagisResult(source.result)
+        is PlaySource.Magis -> openTitleResult(source.result)
         is PlaySource.Ditu -> playDituResult(source)
-        is PlaySource.Plugin -> playPluginResult(source)
+        is PlaySource.Plugin -> openTitleResult(source.result)
     }
 
     /**
@@ -401,24 +393,6 @@ fun SearchScreen(
             },
             sourceLabel = "Caracol",
             accent = ArkivCaracolVerde,
-        )
-    }
-
-    pluginSeason?.let { open ->
-        com.arkiv.player.ui.catalog.MagisSeasonDialog(
-            season = open.result,
-            // The composite source: with a plg1: ref, `episodesWithSeries` reaches the plugin.
-            client = graph.contentSource,
-            onDismiss = { pluginSeason = null },
-            onPlay = { chapters, chapter, series ->
-                pluginSeason = null
-                preparing = true; playError = null
-                scope.launch { applyResult(playback.playPluginSeason(open.result, chapters, chapter, series)) }
-            },
-            // No downloads for plugin titles in v1.
-            onSave = null,
-            sourceLabel = open.pluginName,
-            accent = open.accent,
         )
     }
 
