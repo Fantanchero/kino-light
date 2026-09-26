@@ -131,6 +131,10 @@ fun TvDetailScreen(
     var focusedEpisode by remember(identifier) { mutableStateOf<Episode?>(null) }
 
     val resumeId = data.resumeEpisode?.id
+    // `resumeEpisodeFR` is attached only while the resumable chip is composed, and the carousel
+    // scrolls: pointing `down` at a detached requester drops the D-pad key (see [isComposedItem]).
+    // Asked at the moment of the key press, not at composition.
+    fun resumeChipComposed() = isComposedItem(episodesListState.layoutInfo.visibleItemsInfo.map { it.key }, resumeId)
     // Repositions the carousel ONLY on switching sources (the "Fuentes" chip), not on every
     // `resumeId` change. `episodesListState` carries no `key` by `identifier`, so it survives the
     // source switch; without this reset the carousel stayed scrolled to the old source's offset
@@ -265,7 +269,13 @@ fun TvDetailScreen(
                             // If there's a source selector, going down lands there first; if not,
                             // straight to the resumable chapter (as before). Without this
                             // conditional the explicit jump skipped the whole "Fuentes" row.
-                            .focusProperties { down = if (sources.size > 1) firstSourceFR else resumeEpisodeFR },
+                            .focusProperties {
+                                down = when {
+                                    sources.size > 1 -> firstSourceFR
+                                    resumeChipComposed() -> resumeEpisodeFR
+                                    else -> FocusRequester.Default
+                                }
+                            },
                     ) {
                         Text("▶  ${com.arkiv.player.ui.ChapterLabel.playButtonLabel(data)}")
                     }
@@ -310,7 +320,7 @@ fun TvDetailScreen(
                                             // FocusRequester.Default the D-pad uses the default
                                             // algorithm instead of crashing.
                                             up = if (data.resumeEpisode != null) playFR else FocusRequester.Default
-                                            down = if (data.resumeEpisode != null) resumeEpisodeFR else FocusRequester.Default
+                                            down = if (data.resumeEpisode != null && resumeChipComposed()) resumeEpisodeFR else FocusRequester.Default
                                         }
                                 } else {
                                     Modifier
