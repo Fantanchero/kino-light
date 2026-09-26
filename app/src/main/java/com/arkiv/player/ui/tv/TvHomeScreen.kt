@@ -172,6 +172,14 @@ internal fun homeCardsHold(cardKey: String, magisCards: List<List<String>>, plug
     pluginCards.any { cardKey in it } || magisCards.any { cardKey in it }
 
 /**
+ * The row to scroll the list to so the card's row [rowIndex] is on screen: the one ABOVE it. The rows
+ * region shows two rows, and putting the card's row first left the previous row's label clipped when
+ * the list ended there; with the previous row first the card sits in the second slot, which is the
+ * layout D-pad navigation gives.
+ */
+internal fun homeRowScrollTarget(rowIndex: Int): Int = (rowIndex - 1).coerceAtLeast(0)
+
+/**
  * Index, in the Home rows list, of the row that holds the card [cardKey] (one list of card keys per
  * Magis / plugin row), or null when no row holds it or the list is not laid out yet. The list closes
  * with the Magis rows, then the plugin rows, then [trailingItems] pad items, and what comes before
@@ -575,7 +583,7 @@ fun TvHomeScreen(
                     // the end of the list; while the list lags behind the rows it is null or stale, and
                     // the next try (after the delay) gets it.
                     homeRowIndexOf(cardToRestore, magisCards(), pluginCards(), rowsListState.layoutInfo.totalItemsCount)
-                        ?.let { runCatching { rowsListState.scrollToItem(it) } }
+                        ?.let { runCatching { rowsListState.scrollToItem(homeRowScrollTarget(it)) } }
                     if (runCatching { returnFocus.requestFocus() }.isSuccess) cardRestored = true else delay(60)
                 }
             }

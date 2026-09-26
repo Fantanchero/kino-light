@@ -55,6 +55,15 @@ class TvHomeRestoreRowTest {
     }
 
     @Test
+    fun `the row above the card's is scrolled to first, so the card sits where navigating puts it`() {
+        // With the card's row at the top of a two-row region and the list ending there, the previous
+        // row's label was clipped; showing the previous row first is the layout D-pad navigation gives.
+        assertEquals(4, homeRowScrollTarget(5))
+        assertEquals(0, homeRowScrollTarget(1))
+        assertEquals(0, homeRowScrollTarget(0))
+    }
+
+    @Test
     fun `a list shorter than its rows has no index`() {
         // Only 2 items in the list but 5 rows plus the pad: the list is not laid out yet.
         assertNull(homeRowIndexOf("a-1", magis, plugin, totalItems = 2))
