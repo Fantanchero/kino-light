@@ -109,6 +109,16 @@ class MagisTitleSource(
     ): PlaybackResult = onPlaySeason(result, chapters, chosen, series)
 }
 
+/** Wires [PluginTitleSource] to the app's real plugin playback paths. */
+internal fun pluginTitleSource(graph: AppGraph, extras: PluginTitleExtras): PluginTitleSource {
+    val playback = SearchPlayback(graph)
+    return PluginTitleSource(
+        extras = extras,
+        onPlayMovie = { playback.playPlugin(it) },
+        onPlaySeason = { season, chapters, chosen, series -> playback.playPluginSeason(season, chapters, chosen, series) },
+    )
+}
+
 /** Wires [MagisTitleSource] to the app's real Magis paths. */
 internal fun magisTitleSource(graph: AppGraph): MagisTitleSource {
     val playback = SearchPlayback(graph)
