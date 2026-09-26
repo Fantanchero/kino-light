@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.arkiv.player.AppGraph
 import com.arkiv.player.data.MagisEntities
-import com.arkiv.player.data.catalog.TmdbDetail
+import com.arkiv.player.data.catalog.TmdbInfo
 import com.arkiv.player.data.db.PlaybackEntity
 import com.arkiv.player.data.gateway.CatalogItem
 import com.arkiv.player.data.gateway.ContentSource
@@ -21,7 +21,6 @@ import com.arkiv.player.ui.home.MagisDownloadActions
 import com.arkiv.player.ui.home.chapterEnqueueMessage
 import com.arkiv.player.ui.home.magisDownloadActions
 import com.arkiv.player.ui.home.toGatewayResult
-import com.arkiv.player.ui.plainSynopsis
 import com.arkiv.player.ui.search.PlaybackResult
 import com.arkiv.player.ui.search.SearchPlayback
 import com.arkiv.player.ui.search.queuedDownloadToastText
@@ -93,7 +92,7 @@ sealed interface TitleInfoEvent {
  *
  * Opens instantly from the card that was tapped and then loads, in the background: the series'
  * chapters (the only step whose failure the person sees), its sibling seasons, and, when TMDB
- * knows it, the year and a synopsis. Reads playback progress and download state; **writes nothing**.
+ * knows this exact title, its year, runtime, genres, cast and rating. Reads playback progress and download state; **writes nothing**.
  * Only [play] and the download functions reach code that saves to the library, and they do it
  * through the same paths the home and search already use.
  *
@@ -108,7 +107,8 @@ class TitleInfoViewModel(
     private val downloads: MagisDownloadActions,
     observeProgress: (itemId: String) -> Flow<Map<String, PlaybackEntity>>,
     downloadStates: Flow<Map<String, DownloadDisplayState>>,
-    private val tmdbDetail: suspend (tmdbId: Int) -> TmdbDetail?,
+    private val tmdbInfo: suspend (type: String, tmdbId: Int) -> TmdbInfo?,
+    private val tmdbMovieId: suspend (imdbId: String) -> Int?,
     val canDownload: Boolean,
 ) : ViewModel() {
 
@@ -139,6 +139,10 @@ class TitleInfoViewModel(
             downloadStates.collect { states -> _state.update { it.copy(downloads = states) } }
         }
         loadEpisodes()
+        if (_state.value.info.kind == TitleKind.MOVIE) {
+            val item = _state.value.item
+            viewModelScope.launch { enrich(item, null) }
+        }
     }
 
     // ---- loading ----
@@ -182,20 +186,25 @@ class TitleInfoViewModel(
         _state.update { if (it.item.id == item.id) it.copy(seasons = seasons) else it }
     }
 
-    /** Best-effort: TMDB adds the year, and the synopsis only when the portal sent none. */
+    /**
+     * Best-effort: when TMDB has this exact title, adds what only it knows (see [withTmdb]). A series
+     * is identified by the TMDB id its chapters call already resolved; a movie by the IMDb id its
+     * source publishes, never by its title. Any failure or miss leaves the page as the portal drew it.
+     */
     private suspend fun enrich(item: CatalogItem, series: GatewaySeries?) {
-        val tmdbId = series?.tmdbId?.takeIf { it > 0 } ?: return
-        val detail = attempt { tmdbDetail(tmdbId) } ?: return
-        _state.update { s ->
-            if (s.item.id != item.id) s
-            else s.copy(
-                info = s.info.copy(
-                    year = detail.year.ifBlank { s.info.year },
-                    synopsis = s.info.synopsis.ifBlank { plainSynopsis(detail.overview) },
-                ),
-            )
-        }
+        val (type, tmdbId) = tmdbEntry(item, series) ?: return
+        val detail = attempt { tmdbInfo(type, tmdbId) } ?: return
+        _state.update { s -> if (s.item.id != item.id) s else s.copy(info = s.info.withTmdb(detail)) }
     }
+
+    /** The TMDB `(type, id)` this page is about, or null when it cannot be pinned down exactly. */
+    private suspend fun tmdbEntry(item: CatalogItem, series: GatewaySeries?): Pair<String, Int>? =
+        when (_state.value.info.kind) {
+            TitleKind.SERIES -> series?.tmdbId?.takeIf { it > 0 }?.let { "tv" to it }
+            TitleKind.MOVIE -> attempt { content.movieImdbId(item.ref) }
+                ?.let { imdb -> attempt { tmdbMovieId(imdb) } }
+                ?.let { "movie" to it }
+        }
 
     fun retry() {
         if (_state.value.episodes is EpisodesState.Failed) loadEpisodes()
@@ -204,7 +213,7 @@ class TitleInfoViewModel(
     /**
      * Switches to a sibling season. The portal lists only a content id and a number for it, so the
      * item is rebuilt from the current one: its ref from the new id, its title through [seasonTitle].
-     * What TMDB already added (year, synopsis) is kept: it is the same series.
+     * Everything else on the page (what TMDB added included) is kept: it is the same series.
      */
     fun selectSeason(season: SeasonRef) {
         val current = _state.value.item
@@ -218,7 +227,7 @@ class TitleInfoViewModel(
         _state.update { s ->
             s.copy(
                 item = next,
-                info = next.toTitleInfo().copy(seasonNumber = season.number, year = s.info.year, synopsis = s.info.synopsis),
+                info = s.info.copy(title = next.title.ifBlank { next.id }, seasonNumber = season.number, episodeCount = 0),
                 episodes = EpisodesState.Loading,
                 progress = emptyMap(),
             )
@@ -321,7 +330,8 @@ internal fun titleInfoViewModel(graph: AppGraph, item: CatalogItem): TitleInfoVi
         observeProgress = { itemId -> graph.repository.observePlayback(itemId) },
         downloadStates = graph.repository.observeDownloadRows()
             .map { rows -> rows.associate { it.episodeId to ChapterDownloadState.of(it) } },
-        tmdbDetail = { tmdbId -> graph.tmdbApi.detail("tv", tmdbId) },
+        tmdbInfo = { type, tmdbId -> graph.tmdbApi.info(type, tmdbId) },
+        tmdbMovieId = { imdbId -> graph.tmdbApi.movieIdByImdb(imdbId) },
         canDownload = DownloadSource.hasStrategy("magis", graph.downloadStrategies.keys),
     )
 }

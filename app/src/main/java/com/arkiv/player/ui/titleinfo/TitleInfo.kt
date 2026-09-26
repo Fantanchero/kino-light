@@ -1,5 +1,6 @@
 package com.arkiv.player.ui.titleinfo
 
+import com.arkiv.player.data.catalog.TmdbInfo
 import com.arkiv.player.data.gateway.CatalogItem
 import com.arkiv.player.data.gateway.GatewayEpisode
 import com.arkiv.player.data.gateway.GatewayResult
@@ -32,6 +33,31 @@ data class TitleInfo(
     val runtimeMinutes: Int = 0,
     val episodeCount: Int = 0,
     val seasonNumber: Int? = null,
+    // What only TMDB knows (see [withTmdb]); empty until it answers, or when it cannot be matched.
+    val tagline: String = "",
+    /** A movie's directors, or a series' creators. */
+    val directors: List<String> = emptyList(),
+    val cast: List<String> = emptyList(),
+    /** Age rating ("12+", "TV-MA"). */
+    val certification: String = "",
+)
+
+/**
+ * Adds what TMDB knows about this title. The portal's data stays where it exists: its synopsis, score
+ * and a movie's runtime are what the card already showed, and TMDB fills only the blanks. TMDB's
+ * genres do replace the portal's, which are the English tags its rows classify by. A series' runtime
+ * is per episode, so it is not the title's and is left out.
+ */
+fun TitleInfo.withTmdb(t: TmdbInfo): TitleInfo = copy(
+    synopsis = synopsis.ifBlank { plainSynopsis(t.overview) },
+    year = t.year.ifBlank { year },
+    genres = t.genres.ifEmpty { genres },
+    runtimeMinutes = if (kind == TitleKind.MOVIE && runtimeMinutes <= 0) t.runtimeMinutes else runtimeMinutes,
+    score = score ?: t.voteAverage,
+    tagline = t.tagline,
+    directors = t.directors,
+    cast = t.cast,
+    certification = t.certification,
 )
 
 /** The card the person tapped, as the page's first (instant) paint. */
@@ -70,12 +96,23 @@ fun GatewayResult.toMagisCatalogItem(): CatalogItem? {
     )
 }
 
-/** "★ 7.9  ·  2026  ·  1 h 43 min", leaving out whatever is not known. */
+/** "★ 7.9  ·  2026  ·  1 h 43 min  ·  12+", leaving out whatever is not known. */
 fun TitleInfo.metaLine(): String = listOfNotNull(
     score?.let { String.format(Locale.US, "★ %.1f", it) },
     year.takeIf { it.isNotBlank() },
     runtimeMinutes.takeIf { it > 0 }?.let { formatRuntime(it * 60.0) },
+    certification.takeIf { it.isNotBlank() },
 ).joinToString("  ·  ")
+
+/**
+ * The lines under the synopsis: who directed (or created) it and the first [maxCast] of the cast.
+ * Empty when TMDB gave neither.
+ */
+fun TitleInfo.creditLines(maxCast: Int = 5): List<String> = listOfNotNull(
+    directors.takeIf { it.isNotEmpty() }
+        ?.let { (if (kind == TitleKind.SERIES) "Creada por" else "Dirección") + ": " + it.joinToString(", ") },
+    cast.takeIf { it.isNotEmpty() }?.let { "Reparto: " + it.take(maxCast).joinToString(", ") },
+)
 
 /** The small line above a TV title: "Película", "Serie" or "Serie · 12 episodios". */
 fun TitleInfo.kindLine(): String = when (kind) {

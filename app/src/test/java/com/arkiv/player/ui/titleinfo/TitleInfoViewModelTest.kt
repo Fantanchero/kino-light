@@ -1,7 +1,7 @@
 package com.arkiv.player.ui.titleinfo
 
 import com.arkiv.player.data.MagisEntities
-import com.arkiv.player.data.catalog.TmdbDetail
+import com.arkiv.player.data.catalog.TmdbInfo
 import com.arkiv.player.data.db.PlaybackEntity
 import com.arkiv.player.data.gateway.CatalogItem
 import com.arkiv.player.data.gateway.ContentSource
@@ -53,6 +53,7 @@ class TitleInfoViewModelTest {
     private class FakeContent(
         var episodesFor: suspend (String) -> Pair<List<GatewayEpisode>, GatewaySeries?> = { emptyList<GatewayEpisode>() to null },
         var seasonsFor: suspend (String) -> List<SeasonRef> = { emptyList() },
+        var imdbFor: suspend (String) -> String? = { null },
     ) : ContentSource {
         val episodeRequests = mutableListOf<String>()
         override fun recognizes(ref: String) = true
@@ -63,6 +64,7 @@ class TitleInfoViewModelTest {
             return episodesFor(ref)
         }
         override suspend fun seasonsOf(ref: String): List<SeasonRef> = seasonsFor(ref)
+        override suspend fun movieImdbId(ref: String): String? = imdbFor(ref)
     }
 
     private fun movie(id: String = "m1") = CatalogItem(
@@ -77,9 +79,10 @@ class TitleInfoViewModelTest {
 
     private fun chapters(vararg numbers: Int) = numbers.map { GatewayEpisode(number = it, title = "E$it", ref = "r$it") }
     private fun series(tmdbId: Int = 5, season: Int = 1) = GatewaySeries(imdbId = "tt1", tmdbId = tmdbId, seasonNumber = season)
-    private fun tmdb(year: String = "2026", overview: String = "Sinopsis TMDB") = TmdbDetail(
-        id = 5, type = "tv", title = "t", originalTitle = "t", posterUrl = "", backdropUrl = "",
-        overview = overview, year = year, imdbId = "tt1", seasons = emptyList(),
+    private fun tmdb(year: String = "2026", overview: String = "Sinopsis TMDB") = TmdbInfo(
+        id = 5, overview = overview, tagline = "Un lema", year = year, runtimeMinutes = 144,
+        genres = listOf("Comedia"), voteAverage = 7.6, directors = listOf("Alguien"),
+        cast = listOf("Actriz", "Actor"), certification = "12+",
     )
     private fun noDownloads() = MagisDownloadActions({ null }, { _, _, _ -> null }, { _, _ -> EnqueueOutcome.QUEUED })
 
@@ -92,8 +95,9 @@ class TitleInfoViewModelTest {
         downloads: MagisDownloadActions = noDownloads(),
         progress: (String) -> Flow<Map<String, PlaybackEntity>> = { flowOf(emptyMap()) },
         downloadStates: Flow<Map<String, DownloadDisplayState>> = flowOf(emptyMap()),
-        tmdbDetail: suspend (Int) -> TmdbDetail? = { null },
-    ) = TitleInfoViewModel(item, content, playMovie, playSeason, downloads, progress, downloadStates, tmdbDetail, canDownload = true)
+        tmdbInfo: suspend (String, Int) -> TmdbInfo? = { _, _ -> null },
+        tmdbMovieId: suspend (String) -> Int? = { null },
+    ) = TitleInfoViewModel(item, content, playMovie, playSeason, downloads, progress, downloadStates, tmdbInfo, tmdbMovieId, canDownload = true)
 
     private fun TestScope.collect(vm: TitleInfoViewModel): List<TitleInfoEvent> {
         val events = mutableListOf<TitleInfoEvent>()
@@ -134,7 +138,7 @@ class TitleInfoViewModelTest {
 
     @Test
     fun `TMDB adds the year and keeps the portal's synopsis`() = runTest {
-        val vm = vm(show(), FakeContent(episodesFor = { chapters(1) to series() }), tmdbDetail = { tmdb() })
+        val vm = vm(show(), FakeContent(episodesFor = { chapters(1) to series() }), tmdbInfo = { _, _ -> tmdb() })
         advanceUntilIdle()
         assertEquals("2026", vm.state.value.info.year)
         assertEquals("Sinopsis del portal", vm.state.value.info.synopsis)
@@ -142,7 +146,7 @@ class TitleInfoViewModelTest {
 
     @Test
     fun `TMDB fills the synopsis only when the portal sent none`() = runTest {
-        val vm = vm(show(description = ""), FakeContent(episodesFor = { chapters(1) to series() }), tmdbDetail = { tmdb() })
+        val vm = vm(show(description = ""), FakeContent(episodesFor = { chapters(1) to series() }), tmdbInfo = { _, _ -> tmdb() })
         advanceUntilIdle()
         assertEquals("Sinopsis TMDB", vm.state.value.info.synopsis)
     }
@@ -150,15 +154,128 @@ class TitleInfoViewModelTest {
     @Test
     fun `TMDB is not asked when the series has no TMDB id, and a TMDB failure changes nothing`() = runTest {
         var calls = 0
-        val noId = vm(show(), FakeContent(episodesFor = { chapters(1) to series(tmdbId = 0) }), tmdbDetail = { calls++; tmdb() })
+        val noId = vm(show(), FakeContent(episodesFor = { chapters(1) to series(tmdbId = 0) }), tmdbInfo = { _, _ -> calls++; tmdb() })
         advanceUntilIdle()
         assertEquals(0, calls)
         assertEquals("", noId.state.value.info.year)
 
-        val failing = vm(show(), FakeContent(episodesFor = { chapters(1) to series() }), tmdbDetail = { error("no key") })
+        val failing = vm(show(), FakeContent(episodesFor = { chapters(1) to series() }), tmdbInfo = { _, _ -> error("no key") })
         advanceUntilIdle()
         assertEquals("", failing.state.value.info.year)
         assertTrue(failing.state.value.episodes is EpisodesState.Loaded)
+    }
+
+    // ---- TMDB: movies through their IMDb id, and the extra fields ----
+
+    @Test
+    fun `a movie is enriched through its IMDb id`() = runTest {
+        var imdbAsked: String? = null
+        var infoAsked: Pair<String, Int>? = null
+        val vm = vm(
+            movie().copy(durationS = 0),
+            FakeContent(imdbFor = { "tt6300910" }),
+            tmdbInfo = { type, id -> infoAsked = type to id; tmdb() },
+            tmdbMovieId = { imdb -> imdbAsked = imdb; 1233413 },
+        )
+        advanceUntilIdle()
+        assertEquals("tt6300910", imdbAsked)
+        assertEquals("movie" to 1233413, infoAsked)
+        val info = vm.state.value.info
+        assertEquals("2026", info.year)
+        assertEquals(144, info.runtimeMinutes)
+        assertEquals("Un lema", info.tagline)
+        assertEquals(listOf("Actriz", "Actor"), info.cast)
+        assertEquals(listOf("Alguien"), info.directors)
+        assertEquals("12+", info.certification)
+        assertEquals(listOf("Comedia"), info.genres)
+        assertEquals("Sinopsis del portal", info.synopsis)
+    }
+
+    @Test
+    fun `a movie with no IMDb id is never guessed by its title`() = runTest {
+        var lookups = 0
+        var infos = 0
+        val vm = vm(
+            movie(),
+            FakeContent(imdbFor = { null }),
+            tmdbInfo = { _, _ -> infos++; tmdb() },
+            tmdbMovieId = { lookups++; 1 },
+        )
+        advanceUntilIdle()
+        assertEquals(0, lookups)
+        assertEquals(0, infos)
+        assertEquals("", vm.state.value.info.year)
+    }
+
+    @Test
+    fun `a movie TMDB does not know keeps the portal's data`() = runTest {
+        var infos = 0
+        val vm = vm(
+            movie(),
+            FakeContent(imdbFor = { "tt1234567" }),
+            tmdbInfo = { _, _ -> infos++; tmdb() },
+            tmdbMovieId = { null },
+        )
+        advanceUntilIdle()
+        assertEquals(0, infos)
+        assertEquals(listOf("Drama"), vm.state.value.info.genres)
+    }
+
+    @Test
+    fun `a failure at any step of a movie's lookup changes nothing`() = runTest {
+        val portalFails = vm(
+            movie(), FakeContent(imdbFor = { throw GatewayException("caído") }),
+            tmdbInfo = { _, _ -> tmdb() }, tmdbMovieId = { 1 },
+        )
+        val findFails = vm(
+            movie(), FakeContent(imdbFor = { "tt1234567" }),
+            tmdbInfo = { _, _ -> tmdb() }, tmdbMovieId = { error("sin llave") },
+        )
+        val infoFails = vm(
+            movie(), FakeContent(imdbFor = { "tt1234567" }),
+            tmdbInfo = { _, _ -> error("500") }, tmdbMovieId = { 1 },
+        )
+        advanceUntilIdle()
+        listOf(portalFails, findFails, infoFails).forEach {
+            assertEquals("", it.state.value.info.year)
+            assertEquals("Una peli", it.state.value.info.title)
+            assertEquals(100, it.state.value.info.runtimeMinutes)
+        }
+    }
+
+    @Test
+    fun `a series asks TMDB for its tv entry and shows the extra fields`() = runTest {
+        var infoAsked: Pair<String, Int>? = null
+        val vm = vm(
+            show(),
+            FakeContent(episodesFor = { chapters(1) to series(tmdbId = 42) }),
+            tmdbInfo = { type, id -> infoAsked = type to id; tmdb() },
+        )
+        advanceUntilIdle()
+        assertEquals("tv" to 42, infoAsked)
+        assertEquals("Un lema", vm.state.value.info.tagline)
+        assertEquals(listOf("Actriz", "Actor"), vm.state.value.info.cast)
+        assertEquals("12+", vm.state.value.info.certification)
+    }
+
+    @Test
+    fun `switching season keeps what TMDB added`() = runTest {
+        val vm = vm(
+            show(),
+            FakeContent(
+                episodesFor = { chapters(1) to series() },
+                seasonsFor = { listOf(SeasonRef("s1", 1), SeasonRef("s2", 2)) },
+            ),
+            tmdbInfo = { _, _ -> tmdb() },
+        )
+        advanceUntilIdle()
+        vm.selectSeason(SeasonRef("s2", 2))
+        val right = vm.state.value.info
+        assertEquals(2, right.seasonNumber)
+        assertEquals("Un lema", right.tagline)
+        assertEquals(listOf("Actriz", "Actor"), right.cast)
+        assertEquals(listOf("Comedia"), right.genres)
+        assertEquals("2026", right.year)
     }
 
     @Test

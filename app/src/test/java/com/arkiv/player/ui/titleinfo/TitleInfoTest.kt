@@ -1,5 +1,6 @@
 package com.arkiv.player.ui.titleinfo
 
+import com.arkiv.player.data.catalog.TmdbInfo
 import com.arkiv.player.data.gateway.CatalogItem
 import com.arkiv.player.data.gateway.GatewayEpisode
 import com.arkiv.player.data.gateway.GatewayResult
@@ -124,6 +125,88 @@ class TitleInfoTest {
         assertEquals("★ 8.0", info(score = 8.0).metaLine())
         assertEquals("2026  ·  45 min", info(year = "2026", runtimeMinutes = 45).metaLine())
         assertEquals("", info().metaLine())
+    }
+
+    @Test
+    fun `the meta line ends with the age rating`() {
+        assertEquals(
+            "★ 7.9  ·  2026  ·  1 h 43 min  ·  12+",
+            info(score = 7.9, year = "2026", runtimeMinutes = 103).copy(certification = "12+").metaLine(),
+        )
+        assertEquals("R", info().copy(certification = "R").metaLine())
+    }
+
+    // ---- TMDB merge ----
+
+    private fun tmdbInfo(
+        overview: String = "Sinopsis TMDB",
+        tagline: String = "Nada es lo que parece",
+        year: String = "2025",
+        runtimeMinutes: Int = 144,
+        genres: List<String> = listOf("Comedia", "Crimen"),
+        voteAverage: Double? = 7.6,
+        directors: List<String> = listOf("Rian Johnson"),
+        cast: List<String> = listOf("Daniel Craig", "Josh O'Connor"),
+        certification: String = "12+",
+    ) = TmdbInfo(1, overview, tagline, year, runtimeMinutes, genres, voteAverage, directors, cast, certification)
+
+    @Test
+    fun `TMDB adds what the card did not carry`() {
+        val out = info(kind = TitleKind.MOVIE).withTmdb(tmdbInfo())
+        assertEquals("2025", out.year)
+        assertEquals(144, out.runtimeMinutes)
+        assertEquals("Nada es lo que parece", out.tagline)
+        assertEquals(listOf("Rian Johnson"), out.directors)
+        assertEquals(listOf("Daniel Craig", "Josh O'Connor"), out.cast)
+        assertEquals("12+", out.certification)
+        assertEquals(7.6, out.score!!, 0.001)
+    }
+
+    @Test
+    fun `the portal's synopsis, score and runtime win over TMDB's`() {
+        val out = info(kind = TitleKind.MOVIE, score = 5.8, runtimeMinutes = 103)
+            .copy(synopsis = "Sinopsis del portal")
+            .withTmdb(tmdbInfo())
+        assertEquals("Sinopsis del portal", out.synopsis)
+        assertEquals(5.8, out.score!!, 0.001)
+        assertEquals(103, out.runtimeMinutes)
+    }
+
+    @Test
+    fun `TMDB fills a blank synopsis, stripped of html`() {
+        assertEquals("Hola", info().withTmdb(tmdbInfo(overview = "<p>Hola</p>")).synopsis)
+    }
+
+    @Test
+    fun `TMDB's Spanish genres replace the portal's English tags, but only when it has some`() {
+        val portal = info().copy(genres = listOf("Action", "Drama"))
+        assertEquals(listOf("Comedia", "Crimen"), portal.withTmdb(tmdbInfo()).genres)
+        assertEquals(listOf("Action", "Drama"), portal.withTmdb(tmdbInfo(genres = emptyList())).genres)
+    }
+
+    @Test
+    fun `a series keeps no runtime from TMDB because that one is per episode`() {
+        assertEquals(0, info(kind = TitleKind.SERIES).withTmdb(tmdbInfo(runtimeMinutes = 30)).runtimeMinutes)
+    }
+
+    @Test
+    fun `an empty TMDB answer leaves the page as it was`() {
+        val before = info(score = 5.8, year = "2024").copy(synopsis = "S", genres = listOf("Drama"))
+        val empty = tmdbInfo(
+            overview = "", tagline = "", year = "", runtimeMinutes = 0, genres = emptyList(),
+            voteAverage = null, directors = emptyList(), cast = emptyList(), certification = "",
+        )
+        assertEquals(before, before.withTmdb(empty))
+    }
+
+    @Test
+    fun `credit lines name the director or the creator and the first cast`() {
+        val movie = info(kind = TitleKind.MOVIE).copy(directors = listOf("Rian Johnson"), cast = listOf("A", "B", "C", "D", "E", "F"))
+        assertEquals(listOf("Dirección: Rian Johnson", "Reparto: A, B, C, D, E"), movie.creditLines())
+        assertEquals(listOf("Dirección: Rian Johnson", "Reparto: A, B"), movie.creditLines(maxCast = 2))
+        val show = info(kind = TitleKind.SERIES).copy(directors = listOf("Darren Star", "Otro"))
+        assertEquals(listOf("Creada por: Darren Star, Otro"), show.creditLines())
+        assertEquals(emptyList<String>(), info().creditLines())
     }
 
     @Test
