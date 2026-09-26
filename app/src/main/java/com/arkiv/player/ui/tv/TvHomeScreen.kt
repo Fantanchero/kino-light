@@ -165,6 +165,13 @@ internal fun magisCardKey(rowId: String, itemId: String) = "$rowId-$itemId"
 internal fun pluginCardKey(pluginId: String, rowId: String, itemId: String?) = "plugin-$pluginId-$rowId-$itemId"
 
 /**
+ * Whether any Magis or plugin row holds the card [cardKey]: false while its row has not arrived (a
+ * second plugin's rows come later than the first's) and for good when the card no longer exists.
+ */
+internal fun homeCardsHold(cardKey: String, magisCards: List<List<String>>, pluginCards: List<List<String>>): Boolean =
+    pluginCards.any { cardKey in it } || magisCards.any { cardKey in it }
+
+/**
  * Index, in the Home rows list, of the row that holds the card [cardKey] (one list of card keys per
  * Magis / plugin row), or null when no row holds it or the list is not laid out yet. The list closes
  * with the Magis rows, then the plugin rows, then [trailingItems] pad items, and what comes before
@@ -546,34 +553,31 @@ fun TvHomeScreen(
     LaunchedEffect(firstFocusKey) {
         delay(200)
         if (cardToRestore != null && !cardRestored) {
-            // The Magis rows arrive from a cached fetch: give them a moment. Then walk the rows
-            // list down until the card's row is composed and its requester attached — a card that is
-            // not composed cannot take focus, and the count of rows above it is not fixed.
-            withTimeoutOrNull(3_000) {
-                snapshotFlow { if (cardToRestore.startsWith("plugin-")) pluginRows.isNotEmpty() else magisRows != null }
-                    .first { it }
+            val magisCards = { magisRows.orEmpty().map { r -> r.shown.map { magisCardKey(r.id, it.id) } } }
+            val pluginCards = {
+                pluginRows.map { r -> r.items.map { pluginCardKey(r.pluginId, r.id, it.extra["pluginItemId"]) } }
             }
-            var row = 0
-            repeat(40) {
-                if (cardRestored) return@repeat
-                if (runCatching { returnFocus.requestFocus() }.isSuccess) {
-                    cardRestored = true
-                    // The card can be composed without its row being on screen (a row the list only
-                    // prefetched): focus is on it and nothing shows it. Bring the row to the top.
-                    homeRowIndexOf(
-                        cardToRestore,
-                        magisCards = magisRows.orEmpty().map { r -> r.shown.map { magisCardKey(r.id, it.id) } },
-                        pluginCards = pluginRows.map { r ->
-                            r.items.map { pluginCardKey(r.pluginId, r.id, it.extra["pluginItemId"]) }
-                        },
-                        totalItems = rowsListState.layoutInfo.totalItemsCount,
-                    )?.let { runCatching { rowsListState.scrollToItem(it) } }
-                    return@repeat
+            // The Magis rows arrive from a cached fetch: give them a moment. A plugin's rows arrive as
+            // each plugin answers, so for a plugin card wait for ITS row, not for any plugin's.
+            withTimeoutOrNull(3_000) {
+                snapshotFlow {
+                    if (cardToRestore.startsWith("plugin-")) homeCardsHold(cardToRestore, magisCards(), pluginCards())
+                    else magisRows != null
+                }.first { it }
+            }
+            // A card no row holds (it left the catalog, or its plugin never answered) cannot be
+            // restored: fall through to the default landing instead of searching for it.
+            if (homeCardsHold(cardToRestore, magisCards(), pluginCards())) {
+                repeat(40) {
+                    if (cardRestored) return@repeat
+                    // Aim at the card's row: a card that is not composed cannot take focus, and one whose
+                    // row is only prefetched takes it without being seen. The row's index counts back from
+                    // the end of the list; while the list lags behind the rows it is null or stale, and
+                    // the next try (after the delay) gets it.
+                    homeRowIndexOf(cardToRestore, magisCards(), pluginCards(), rowsListState.layoutInfo.totalItemsCount)
+                        ?.let { runCatching { rowsListState.scrollToItem(it) } }
+                    if (runCatching { returnFocus.requestFocus() }.isSuccess) cardRestored = true else delay(60)
                 }
-                val last = (rowsListState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
-                runCatching { rowsListState.scrollToItem(row.coerceAtMost(last)) }
-                row++
-                delay(60)
             }
         }
         if (cardRestored) return@LaunchedEffect

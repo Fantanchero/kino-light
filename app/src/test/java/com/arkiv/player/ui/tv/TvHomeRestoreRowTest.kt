@@ -1,7 +1,9 @@
 package com.arkiv.player.ui.tv
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -40,6 +42,16 @@ class TvHomeRestoreRowTest {
         val rows = listOf(listOf("a-x"), listOf("a-b-item"))
         // "a-b-item" starts with row "a"'s "a-" but belongs to the second row.
         assertEquals(1, homeRowIndexOf("a-b-item", rows, emptyList(), totalItems = 3))
+    }
+
+    @Test
+    fun `a card is held only by a row that has it`() {
+        assertTrue(homeCardsHold("plugin-p-r2-y", magis, plugin))
+        assertTrue(homeCardsHold("b-1", magis, plugin))
+        // Another plugin's row has not arrived yet (or the card is gone): nothing holds it.
+        assertFalse(homeCardsHold("plugin-q-r1-x", magis, plugin))
+        assertFalse(homeCardsHold("z-9", magis, plugin))
+        assertFalse(homeCardsHold("a-1", emptyList(), emptyList()))
     }
 
     @Test
