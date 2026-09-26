@@ -152,6 +152,12 @@ data class GatewaySeries(
 )
 
 /**
+ * One season of a series as the portal lists it: its own item ([contentId]) and its number. Magis
+ * treats every season as a separate item, so switching season means opening [contentId].
+ */
+data class SeasonRef(val contentId: String, val number: Int)
+
+/**
  * What the source emits while it searches. The event format is kept -instead of returning a
  * list- because the screen paints results as they arrive, and so the source's start/end/error
  * are explicit states, not absences.

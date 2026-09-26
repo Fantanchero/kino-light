@@ -43,6 +43,13 @@ interface ContentSource {
     suspend fun episodes(ref: String): List<GatewayEpisode> = episodesWithSeries(ref).first
 
     /**
+     * Every season of the series [ref] belongs to, its own included, or empty when the source does
+     * not list them or the series has only one. A default, like [episodes], so a source that has
+     * no notion of sibling seasons (Caracol, plugins) keeps compiling and answers "none".
+     */
+    suspend fun seasonsOf(ref: String): List<SeasonRef> = emptyList()
+
+    /**
      * One page of a source's "Ver más" listing: [ref] is what a Home row or a page named, [cursor]
      * null for the first page. Only plugins that declare `browse` implement it; Magis and Caracol
      * keep this default and are never asked.
