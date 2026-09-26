@@ -136,6 +136,18 @@ private fun episodesWord(count: Int): String? = when {
 fun chapterNumberLabel(season: Int?, number: Int): String =
     if (season != null && season > 0) "T$season · E$number" else "E$number"
 
+/**
+ * A chapter's season for identity: the source's own, else 1. Season 0 (specials) counts as 1, the
+ * rule `PluginEntities.chapterId` applies when it saves, so the page and the library agree.
+ */
+val GatewayEpisode.seasonOrOne: Int get() = (season ?: 1).coerceAtLeast(1)
+
+/** The chapter's key in the page's lists: unique across seasons even when a source repeats numbers. */
+val GatewayEpisode.listKey: String get() = "$seasonOrOne-$number"
+
+/** The season to print next to this chapter: its own when the source gave one, else [fallback]. */
+fun GatewayEpisode.labelSeason(fallback: Int?): Int? = season?.let { seasonOrOne } ?: fallback
+
 /** The chapter's own name: TMDB's when there is one, else the portal's, else null. */
 fun chapterName(chapter: GatewayEpisode): String? =
     chapter.tmdbTitle?.takeIf { it.isNotBlank() } ?: chapter.title.takeIf { it.isNotBlank() }

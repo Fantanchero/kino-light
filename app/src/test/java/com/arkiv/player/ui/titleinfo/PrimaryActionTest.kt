@@ -1,10 +1,13 @@
 package com.arkiv.player.ui.titleinfo
 
 import com.arkiv.player.data.MagisEntities
+import com.arkiv.player.data.PluginEntities
 import com.arkiv.player.data.db.PlaybackEntity
 import com.arkiv.player.data.gateway.GatewayEpisode
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PrimaryActionTest {
@@ -21,10 +24,16 @@ class PrimaryActionTest {
         row(MagisEntities.episodeIdFor(itemId, number), positionMs, watched, last)
 
     private fun series(chapters: List<GatewayEpisode>?, vararg rows: Pair<String, PlaybackEntity>) =
-        primaryAction(TitleKind.SERIES, contentId, chapters, mapOf(*rows))
+        primaryAction(
+            TitleKind.SERIES, MagisEntities.movieEpisodeId(itemId),
+            { MagisEntities.episodeIdFor(itemId, it.number) }, chapters, mapOf(*rows),
+        )
 
     private fun movie(vararg rows: Pair<String, PlaybackEntity>) =
-        primaryAction(TitleKind.MOVIE, contentId, null, mapOf(*rows))
+        primaryAction(
+            TitleKind.MOVIE, MagisEntities.movieEpisodeId(itemId),
+            { MagisEntities.episodeIdFor(itemId, it.number) }, null, mapOf(*rows),
+        )
 
     // ---- movie ----
 
@@ -102,6 +111,63 @@ class PrimaryActionTest {
         val out = series(chapters(153), chapterRow(100, 60_000, false, 100))!!
         assertEquals(PrimaryAction("Continuar episodio 100", 100), out)
         assertEquals(PrimaryAction("Reproducir episodio 1", 1), series(chapters(153)))
+    }
+
+    // ---- plugin chapters: the season is part of the identity ----
+
+    private val pluginItem = "plugin:demo:show1"
+
+    private fun pc(season: Int, number: Int) =
+        GatewayEpisode(number = number, title = "E$number", ref = "r$season$number", season = season)
+
+    private val twoSeasons = listOf(pc(1, 1), pc(1, 2), pc(1, 3), pc(2, 1), pc(2, 2), pc(2, 3))
+
+    private fun pluginSeries(chapters: List<GatewayEpisode>?, vararg rows: Pair<String, PlaybackEntity>) =
+        primaryAction(
+            TitleKind.SERIES, PluginEntities.movieEpisodeId(pluginItem),
+            { PluginEntities.chapterId(pluginItem, it.seasonOrOne, it.number) }, chapters, mapOf(*rows),
+        )
+
+    private fun pluginRow(season: Int, number: Int, positionMs: Long, watched: Boolean, last: Long) =
+        row(PluginEntities.chapterId(pluginItem, season, number), positionMs, watched, last)
+
+    @Test
+    fun `a fresh plugin series with several seasons starts at season 1 and says so`() {
+        assertEquals(PrimaryAction("Reproducir T1 · E1", 1, 1), pluginSeries(twoSeasons))
+    }
+
+    @Test
+    fun `progress in season 2 continues there although season 1 repeats the number`() {
+        val out = pluginSeries(twoSeasons, pluginRow(2, 2, 60_000, false, 100))
+        assertEquals(PrimaryAction("Continuar T2 · E2", 2, 2), out)
+    }
+
+    @Test
+    fun `finishing the last chapter of a season offers the first of the next`() {
+        val out = pluginSeries(twoSeasons, pluginRow(1, 3, 990_000, true, 100))
+        assertEquals(PrimaryAction("Reproducir T2 · E1", 1, 2), out)
+    }
+
+    @Test
+    fun `a single-season plugin series keeps the plain label but still carries its season`() {
+        assertEquals(PrimaryAction("Reproducir episodio 1", 1, 1), pluginSeries(listOf(pc(1, 1), pc(1, 2))))
+    }
+
+    @Test
+    fun `the action plays only the chapter of its own season`() {
+        val action = PrimaryAction("x", 1, 2)
+        assertTrue(action.plays(pc(2, 1)))
+        assertFalse(action.plays(pc(1, 1)))
+        assertFalse(action.plays(pc(2, 2)))
+        // A source with no per-chapter season (Magis): the number alone decides.
+        assertTrue(PrimaryAction("y", 1).plays(pc(2, 1)))
+    }
+
+    @Test
+    fun `the action's list key matches the chapter's`() {
+        assertEquals(pc(2, 1).listKey, PrimaryAction("x", 1, 2).listKey)
+        assertEquals("1-5", PrimaryAction("x", 5).listKey)
+        assertEquals(null, PrimaryAction("x", null).listKey)
     }
 
     // ---- seasonTitle ----

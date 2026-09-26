@@ -64,7 +64,13 @@ data class TitleInfoState(
     val itemId: String get() = MagisEntities.itemIdFor(item.id)
 
     val primary: PrimaryAction?
-        get() = primaryAction(info.kind, item.id, (episodes as? EpisodesState.Loaded)?.chapters, progress)
+        get() = primaryAction(
+            info.kind,
+            MagisEntities.movieEpisodeId(itemId),
+            { MagisEntities.episodeIdFor(itemId, it.number) },
+            (episodes as? EpisodesState.Loaded)?.chapters,
+            progress,
+        )
 
     val showSeasonSelector: Boolean get() = seasons.size > 1
 }

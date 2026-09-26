@@ -109,6 +109,34 @@ class TitleInfoTest {
         assertNull(out.backdrop)
     }
 
+    // ---- chapter identity ----
+
+    private fun chapterIn(season: Int?, number: Int = 3) =
+        GatewayEpisode(number = number, title = "t", ref = "r", season = season)
+
+    @Test
+    fun `a chapter with no season is in season 1 and season 0 counts as 1`() {
+        assertEquals(1, chapterIn(null).seasonOrOne)
+        assertEquals(1, chapterIn(0).seasonOrOne)
+        assertEquals(1, chapterIn(1).seasonOrOne)
+        assertEquals(4, chapterIn(4).seasonOrOne)
+    }
+
+    @Test
+    fun `list keys differ across seasons that repeat a number`() {
+        assertEquals("1-1", chapterIn(1, 1).listKey)
+        assertEquals("2-1", chapterIn(2, 1).listKey)
+        assertEquals("1-5", chapterIn(null, 5).listKey)
+    }
+
+    @Test
+    fun `a chapter is labelled with its own season, else the page's`() {
+        assertEquals(2, chapterIn(2).labelSeason(fallback = 9))
+        assertEquals(9, chapterIn(null).labelSeason(fallback = 9))
+        assertEquals(null, chapterIn(null).labelSeason(fallback = null))
+        assertEquals(1, chapterIn(0).labelSeason(fallback = 9))
+    }
+
     // ---- text helpers ----
 
     private fun info(
