@@ -35,9 +35,10 @@ import com.arkiv.player.ui.theme.ArkivRed
 import com.arkiv.player.ui.theme.ArkivSurfaceHigh
 
 /**
- * Episode card for a horizontal carousel (used in the player's pause overlay and in a series'
- * detail): thumbnail + number + progress ("10 de 25 min" / "Visto") + thin bar.
- * Reusable with D-pad: [modifier] is where the caller hangs focusRequester/focusProperties.
+ * Episode card for a horizontal carousel of a library item (used in the player's pause overlay and
+ * in a series' detail). A thin wrapper: it only translates a Room [Episode] into what
+ * [TvEpisodeCard] draws, so the info page can draw the same card for a catalog chapter that has no
+ * Room row.
  */
 @Composable
 fun TvEpisodeChip(
@@ -60,22 +61,62 @@ fun TvEpisodeChip(
      *  (background + texts), same as the Home's hero follows the focused card. */
     onFocus: (() -> Unit)? = null,
 ) {
-    var isFocused by remember { mutableStateOf(false) }
-    val totalMin = (episode.durationSeconds / 60).toInt().coerceAtLeast(0)
-    val watchedFrac = if (progress != null && progress.durationMs > 0) {
+    TvEpisodeCard(
+        numberLabel = ChapterLabel.number(episode),
+        contentDescription = episode.displayName,
+        durationMin = (episode.durationSeconds / 60).toInt().coerceAtLeast(0),
+        isCurrent = isCurrent,
+        progress = progress,
+        onClick = onClick,
+        modifier = modifier,
+        stillUrl = stillUrl,
+        episodeTitle = episodeTitle,
+        onFocus = onFocus,
+    )
+}
+
+/** The fraction of the chapter already watched, for the thin bar: 0 with no progress or no duration. */
+internal fun chipWatchedFraction(progress: PlaybackEntity?): Float =
+    if (progress != null && progress.durationMs > 0) {
         (progress.positionMs.toFloat() / progress.durationMs).coerceIn(0f, 1f)
     } else {
         0f
     }
-    // Only show progress in minutes when there's a real duration: a chapter with no duration
-    // metadata yet (Magis/Ditu both save durationSeconds = 0.0 when first written; torrent packs
-    // used to do the same before this branch's pruning) would show a meaningless "0 de 0 min".
-    val progressLabel = when {
-        progress == null || progress.positionMs <= 0 || totalMin <= 0 -> null
-        progress.watched -> "Visto"
-        else -> "${(progress.positionMs / 60000).toInt().coerceAtLeast(0)} de $totalMin min"
-    }
-    val episodeLabel = ChapterLabel.number(episode)
+
+/**
+ * "10 de 25 min" / "Visto", or null. Only shows minutes when there is a real duration: a chapter
+ * with no duration metadata yet (Magis/Ditu both save `durationSeconds = 0.0` when first written)
+ * would show a meaningless "0 de 0 min".
+ */
+internal fun chipProgressLabel(progress: PlaybackEntity?, totalMin: Int): String? = when {
+    progress == null || progress.positionMs <= 0 || totalMin <= 0 -> null
+    progress.watched -> "Visto"
+    else -> "${(progress.positionMs / 60000).toInt().coerceAtLeast(0)} de $totalMin min"
+}
+
+/**
+ * The card itself, free of Room: thumbnail + number + progress + thin bar. Reusable with D-pad:
+ * [modifier] is where the caller hangs focusRequester/focusProperties.
+ *
+ * [durationMin] is 0 when the duration is unknown, which hides the minutes (see
+ * [chipProgressLabel]).
+ */
+@Composable
+fun TvEpisodeCard(
+    numberLabel: String,
+    contentDescription: String,
+    durationMin: Int,
+    isCurrent: Boolean,
+    progress: PlaybackEntity?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    stillUrl: String? = null,
+    episodeTitle: String? = null,
+    onFocus: (() -> Unit)? = null,
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    val watchedFrac = chipWatchedFraction(progress)
+    val progressLabel = chipProgressLabel(progress, durationMin)
 
     Column(
         modifier = modifier
@@ -104,12 +145,10 @@ fun TvEpisodeChip(
                 .clip(RoundedCornerShape(6.dp))
                 .background(Color.Black),
         ) {
-            // Preference: the chapter's real still (TMDB). The archive.org thumbnail that used to
-            // follow was removed in this branch's pruning; with neither, it stays black.
-            val thumb = stillUrl
+            // The chapter's real still (TMDB); with none, it stays black.
             AsyncImage(
-                model = thumb,
-                contentDescription = episode.displayName,
+                model = stillUrl,
+                contentDescription = contentDescription,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
@@ -131,7 +170,7 @@ fun TvEpisodeChip(
             }
         }
         Text(
-            episodeLabel,
+            numberLabel,
             color = if (isCurrent) ArkivRed else Color.White,
             style = MaterialTheme.typography.labelSmall,
             maxLines = 1,
