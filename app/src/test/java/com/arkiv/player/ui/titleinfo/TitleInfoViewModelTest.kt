@@ -137,6 +137,23 @@ class TitleInfoViewModelTest {
     }
 
     @Test
+    fun `a series the portal answers with no chapters is reported and can be retried`() = runTest {
+        // MagisSource does not throw for this (it happens on transient portal failures): without an
+        // explicit state the button said "Cargando…" over an empty list, for ever, with no retry.
+        var answer: Pair<List<GatewayEpisode>, GatewaySeries?> = emptyList<GatewayEpisode>() to series()
+        val vm = vm(show(), FakeContent(episodesFor = { answer }))
+        advanceUntilIdle()
+        assertTrue(vm.state.value.episodes is EpisodesState.Failed)
+        assertNull(vm.state.value.primary)
+
+        answer = chapters(1, 2) to series()
+        vm.retry()
+        advanceUntilIdle()
+        assertTrue(vm.state.value.episodes is EpisodesState.Loaded)
+        assertEquals(PrimaryAction("Reproducir episodio 1", 1), vm.state.value.primary)
+    }
+
+    @Test
     fun `TMDB adds the year and keeps the portal's synopsis`() = runTest {
         val vm = vm(show(), FakeContent(episodesFor = { chapters(1) to series() }), tmdbInfo = { _, _ -> tmdb() })
         advanceUntilIdle()

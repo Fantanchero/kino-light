@@ -69,6 +69,15 @@ private fun tvMetaLine(info: TitleInfo): String =
     listOf(info.metaLine(), info.genres.joinToString(", ")).filter { it.isNotBlank() }.joinToString("  ·  ")
 
 /**
+ * Whether the item with [key] is one the lazy list currently lays out ([visibleKeys] are those items'
+ * keys). A focus requester is attached only to a composed item, and pointing `focusProperties` at a
+ * detached one drops the D-pad key: Compose logs "FocusRequester is not initialized" and the focus
+ * does not move (older versions throw). Measured on the TV with the episode carousel scrolled to the
+ * end: Down from the first season chip did nothing.
+ */
+internal fun isComposedItem(visibleKeys: List<Any>, key: Any?): Boolean = key != null && key in visibleKeys
+
+/**
  * The information page a Magis title opens on the TV, in the same visual language as
  * [TvDetailScreen] (which is for library items). Everything comes from [TitleInfoViewModel].
  */
@@ -106,7 +115,15 @@ fun TvTitleInfoScreen(
     val resumeChipFR = remember { FocusRequester() }
     val firstSeasonFR = remember { FocusRequester() }
     val carouselState = rememberLazyListState()
+    val chipsState = rememberLazyListState()
     var focusedChapter by remember(state.item.id) { mutableStateOf<GatewayEpisode?>(null) }
+
+    // Explicit focus destinations are only safe while their target is composed (see
+    // [isComposedItem]); both lists scroll, so ask at the moment of the key press, not at composition.
+    fun resumeCardComposed() =
+        isComposedItem(carouselState.layoutInfo.visibleItemsInfo.map { it.key }, primary?.chapterNumber)
+    fun firstChipComposed() =
+        isComposedItem(chipsState.layoutInfo.visibleItemsInfo.map { it.key }, state.seasons.firstOrNull()?.contentId)
 
     // The carousel opens on the chapter the main button plays, once per load. Keyed on the season
     // and on whether chapters exist, NOT on the button's target: that changes every time progress
@@ -116,9 +133,12 @@ fun TvTitleInfoScreen(
         if (index >= 0) carouselState.scrollToItem(index)
     }
     // Focus starts on the main button as soon as it can take it: at once for a movie, when the
-    // chapters arrive for a series. `runCatching` because the requester may not be attached yet.
+    // chapters arrive for a series. `runCatching` because the requester may not be attached yet. Only
+    // ONCE: picking another season makes `primary` go null and back, and that must not pull focus
+    // from the season chip the person just pressed.
+    var focusPlaced by remember { mutableStateOf(false) }
     LaunchedEffect(primary != null) {
-        if (primary != null) runCatching { playFR.requestFocus() }
+        if (primary != null && !focusPlaced && runCatching { playFR.requestFocus() }.isSuccess) focusPlaced = true
     }
 
     val focused = focusedChapter
@@ -219,7 +239,9 @@ fun TvTitleInfoScreen(
                 }
                 Button(
                     onClick = { vm.play() },
-                    enabled = primary != null && !state.resolving,
+                    // Stays enabled while a play resolves (the view model ignores taps then): a
+                    // disabled button cannot hold focus, and a failed play left it nowhere.
+                    enabled = primary != null,
                     colors = arkivTvButtonColors(),
                     border = arkivTvButtonBorder(),
                     modifier = Modifier
@@ -233,8 +255,9 @@ fun TvTitleInfoScreen(
                             // the season chips exist only once the chapters have loaded.
                             down = when {
                                 chapters.isEmpty() -> FocusRequester.Default
-                                state.showSeasonSelector -> firstSeasonFR
-                                else -> resumeChipFR
+                                state.showSeasonSelector && firstChipComposed() -> firstSeasonFR
+                                resumeCardComposed() -> resumeChipFR
+                                else -> FocusRequester.Default
                             }
                         },
                 ) {
@@ -258,6 +281,7 @@ fun TvTitleInfoScreen(
                         modifier = Modifier.padding(start = 48.dp, bottom = 8.dp),
                     )
                     LazyRow(
+                        state = chipsState,
                         contentPadding = PaddingValues(horizontal = 48.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
@@ -269,7 +293,7 @@ fun TvTitleInfoScreen(
                                 modifier = if (index == 0) {
                                     Modifier.focusRequester(firstSeasonFR).focusProperties {
                                         up = playFR
-                                        down = if (chapters.isEmpty()) FocusRequester.Default else resumeChipFR
+                                        down = if (resumeCardComposed()) resumeChipFR else FocusRequester.Default
                                     }
                                 } else {
                                     Modifier
@@ -323,7 +347,7 @@ fun TvTitleInfoScreen(
                                     onFocus = { focusedChapter = chapter },
                                     modifier = if (chapter.number == primary?.chapterNumber) {
                                         Modifier.focusRequester(resumeChipFR).focusProperties {
-                                            up = if (state.showSeasonSelector) firstSeasonFR else playFR
+                                            up = if (state.showSeasonSelector && firstChipComposed()) firstSeasonFR else playFR
                                         }
                                     } else {
                                         Modifier

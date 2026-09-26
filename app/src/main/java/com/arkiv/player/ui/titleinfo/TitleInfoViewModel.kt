@@ -166,6 +166,12 @@ class TitleInfoViewModel(
             }
             // The person may have switched season while this request was in flight.
             if (_state.value.item.id != item.id) return@launch
+            // The portal answers a transient failure with a detail that has no chapters instead of
+            // an error. An empty Loaded left the button on "Cargando…" for ever with no way out.
+            if (chapters.isEmpty()) {
+                _state.update { it.copy(episodes = EpisodesState.Failed("No hay episodios disponibles por ahora")) }
+                return@launch
+            }
             _state.update { s ->
                 s.copy(
                     episodes = EpisodesState.Loaded(chapters, series),

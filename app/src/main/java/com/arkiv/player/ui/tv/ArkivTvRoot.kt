@@ -74,7 +74,7 @@ fun ArkivTvRoot(
 
     /** A Magis card, movie or series: opens its info page. */
     fun openMagis(item: com.arkiv.player.data.gateway.CatalogItem) {
-        titleRoute(item)?.let { route -> navController.navigate(route) }
+        titleRoute(item)?.let { route -> navController.navigate(route) { launchSingleTop = true } }
     }
 
     // Most Magis live channels play on an anonymous session (verified against the portal), so we no
@@ -139,7 +139,7 @@ fun ArkivTvRoot(
             TvSearchScreen(
                 onPlay = { goToPlayer(it) },
                 onBack = { navController.popBackStack() },
-                onOpenTitle = { route -> navController.navigate(route) },
+                onOpenTitle = { route -> navController.navigate(route) { launchSingleTop = true } },
                 onBrowseRow = { rowId, title ->
                     navController.navigate("row_browse/$rowId?title=${android.net.Uri.encode(title)}")
                 },

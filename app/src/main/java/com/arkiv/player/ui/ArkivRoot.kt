@@ -277,7 +277,7 @@ fun ArkivRoot(
                 HomeScreen(
                     onOpenItem = { navController.navigate("detail/${Uri.encode(it)}") },
                     onPlayEpisode = { playEpisode(it) },
-                    onOpenTitle = { item -> titleRoute(item)?.let { route -> navController.navigate(route) } },
+                    onOpenTitle = { item -> titleRoute(item)?.let { route -> navController.navigate(route) { launchSingleTop = true } } },
                     onPlayLive = { code -> goToLiveChannel(code) },
                     // "Ver más canales": the same options as tapping the "En vivo" tab below, so it
                     // shows marked as selected and the back stack doesn't grow from entering here.
@@ -372,7 +372,7 @@ fun ArkivRoot(
             ) { entry ->
                 Box(Modifier.fillMaxSize().padding(padding)) {
                     SearchScreen(
-                        onOpenDetail = { route -> navController.navigate(route) },
+                        onOpenDetail = { route -> navController.navigate(route) { launchSingleTop = true } },
                         onPlay = { id -> playEpisode(id) },
                         onBack = { navController.popBackStack() },
                         onBrowseRow = { rowId, title ->
@@ -507,7 +507,7 @@ fun ArkivRoot(
                 com.arkiv.player.ui.home.MagisRowBrowseScreen(
                     rowId = entry.arguments?.getString("rowId").orEmpty(),
                     title = entry.arguments?.getString("title").orEmpty(),
-                    onOpenTitle = { item -> titleRoute(item)?.let { route -> navController.navigate(route) } },
+                    onOpenTitle = { item -> titleRoute(item)?.let { route -> navController.navigate(route) { launchSingleTop = true } } },
                     onBack = { navController.popBackStack() },
                 )
             }
