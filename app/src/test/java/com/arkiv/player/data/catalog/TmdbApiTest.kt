@@ -57,6 +57,62 @@ class TmdbApiTest {
     }
 
     @Test
+    fun `info of a movie asks for its credits and release dates in Spanish`() = runBlocking {
+        server.enqueue(MockResponse().setBody("""{"id":603,"runtime":136}"""))
+
+        val info = api().info("movie", 603)
+
+        val url = server.takeRequest().requestUrl!!
+        assertEquals("/3/movie/603", url.encodedPath)
+        assertEquals("credits,release_dates", url.queryParameter("append_to_response"))
+        assertEquals("es-MX", url.queryParameter("language"))
+        assertEquals(136, info!!.runtimeMinutes)
+    }
+
+    @Test
+    fun `info of a series asks for its credits and content ratings`() = runBlocking {
+        server.enqueue(MockResponse().setBody("""{"id":2288}"""))
+
+        api().info("tv", 2288)
+
+        val url = server.takeRequest().requestUrl!!
+        assertEquals("/3/tv/2288", url.encodedPath)
+        assertEquals("credits,content_ratings", url.queryParameter("append_to_response"))
+    }
+
+    @Test
+    fun `info of anything but a movie or a series is refused without a request`() = runBlocking {
+        assertNull(api().info("person", 1))
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun `info is null when TMDB fails`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(500))
+
+        assertNull(api().info("movie", 603))
+    }
+
+    @Test
+    fun `a movie is found by its IMDb id`() = runBlocking {
+        server.enqueue(MockResponse().setBody("""{"movie_results":[{"id":1233413}],"tv_results":[]}"""))
+
+        val id = api().movieIdByImdb("tt6300910")
+
+        val url = server.takeRequest().requestUrl!!
+        assertEquals("/3/find/tt6300910", url.encodedPath)
+        assertEquals("imdb_id", url.queryParameter("external_source"))
+        assertEquals(1233413, id)
+    }
+
+    @Test
+    fun `something that is not an IMDb id never reaches TMDB`() = runBlocking {
+        assertNull(api().movieIdByImdb("Batman"))
+        assertNull(api().movieIdByImdb("tt12"))
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
     fun `search sends the key and does not ask for adult content`() = runBlocking {
         server.enqueue(MockResponse().setBody("""{"results":[]}"""))
 

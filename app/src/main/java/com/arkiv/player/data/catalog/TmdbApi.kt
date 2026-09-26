@@ -342,6 +342,29 @@ class TmdbApi(
     }
 
     /**
+     * What the info page paints for a movie or series: synopsis, tagline, year, runtime, Spanish
+     * genres, cast, directors and age rating, in one request. type: "movie" | "tv"; anything else is
+     * refused without a request. Null when the call fails.
+     */
+    suspend fun info(type: String, id: Int): TmdbInfo? = withContext(Dispatchers.IO) {
+        val append = when (type) {
+            "movie" -> "credits,release_dates"
+            "tv" -> "credits,content_ratings"
+            else -> return@withContext null
+        }
+        parseTmdbInfo(get("$base/$type/$id?$auth&append_to_response=$append"), type)
+    }
+
+    /**
+     * The TMDB movie with that IMDb id, the only EXACT match for a Magis movie (a title search
+     * would guess). Null when the id is malformed (never sent), unknown or the call fails.
+     */
+    suspend fun movieIdByImdb(imdbId: String): Int? = withContext(Dispatchers.IO) {
+        if (!Regex("""^tt\d{7,}$""").matches(imdbId)) return@withContext null
+        parseFindMovieId(get("$base/find/$imdbId?$auth&external_source=imdb_id"))
+    }
+
+    /**
      * All the backdrops (landscape) of a title, in w1280 URLs, from most voted to least.
      * No language filter (`include_image_language`) to bring in the widest variety of backgrounds.
      * type: "movie" | "tv".
