@@ -40,8 +40,15 @@ class TitleInfoTest {
         assertEquals("Una oficinista harta.", info.synopsis)
         assertEquals(listOf("Drama", "Romance"), info.genres)
         assertEquals(7.9, info.score!!, 0.0)
-        assertEquals(103, info.runtimeMinutes)
+        assertEquals("a series' card duration is per episode, not the title's", 0, info.runtimeMinutes)
         assertEquals(12, info.episodeCount)
+    }
+
+    @Test
+    fun `a series card's duration is not the title's runtime, a movie's is`() {
+        // A series' duration is per episode (TMDB's series runtime is left out for the same reason).
+        assertEquals(0, item(type = "teleplay", durationS = 2700).toTitleInfo().runtimeMinutes)
+        assertEquals(103, item(type = "movie", durationS = 6224).toTitleInfo().runtimeMinutes)
     }
 
     @Test

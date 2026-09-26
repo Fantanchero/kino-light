@@ -311,6 +311,80 @@ class TitleInfoViewModelTest {
     }
 
     @Test
+    fun `a season whose sibling lookup fails keeps the selector it already had`() = runTest {
+        var down = false
+        val vm = vm(
+            show(),
+            FakeContent(
+                episodesFor = { chapters(1) to series() },
+                seasonsFor = { if (down) throw GatewayException("caído") else listOf(SeasonRef("s1", 1), SeasonRef("s2", 2)) },
+            ),
+        )
+        advanceUntilIdle()
+        assertTrue(vm.state.value.showSeasonSelector)
+        down = true
+        vm.selectSeason(SeasonRef("s2", 2))
+        advanceUntilIdle()
+        assertTrue("the seasons are already known: a failed refresh must not hide them", vm.state.value.showSeasonSelector)
+        assertEquals(2, vm.state.value.seasons.size)
+    }
+
+    @Test
+    fun `switching season does not ask TMDB again for the same series`() = runTest {
+        var asked = 0
+        val vm = vm(
+            show(),
+            FakeContent(
+                episodesFor = { chapters(1) to series(tmdbId = 5) },
+                seasonsFor = { listOf(SeasonRef("s1", 1), SeasonRef("s2", 2)) },
+            ),
+            tmdbInfo = { _, _ -> asked++; tmdb() },
+        )
+        advanceUntilIdle()
+        assertEquals(1, asked)
+        vm.selectSeason(SeasonRef("s2", 2))
+        advanceUntilIdle()
+        assertEquals("same TMDB id: nothing new to learn", 1, asked)
+        assertEquals("Un lema", vm.state.value.info.tagline)
+    }
+
+    @Test
+    fun `a TMDB answer that lands after a season switch does not stop the new season being enriched`() = runTest {
+        val gate = CompletableDeferred<TmdbInfo?>()
+        var calls = 0
+        val vm = vm(
+            show(),
+            FakeContent(
+                episodesFor = { chapters(1) to series(tmdbId = 5) },
+                seasonsFor = { listOf(SeasonRef("s1", 1), SeasonRef("s2", 2)) },
+            ),
+            tmdbInfo = { _, _ -> calls++; if (calls == 1) gate.await() else tmdb() },
+        )
+        advanceUntilIdle() // the first season's TMDB request is in flight
+        vm.selectSeason(SeasonRef("s2", 2))
+        gate.complete(tmdb()) // it lands for a page that is already on season 2: dropped
+        advanceUntilIdle()
+        assertEquals("the dropped answer must not count as done", "Un lema", vm.state.value.info.tagline)
+    }
+
+    @Test
+    fun `a season that resolves to another TMDB id is asked`() = runTest {
+        val asked = mutableListOf<Int>()
+        val vm = vm(
+            show(),
+            FakeContent(
+                episodesFor = { ref -> chapters(1) to series(tmdbId = if (ref.endsWith("s2")) 6 else 5) },
+                seasonsFor = { listOf(SeasonRef("s1", 1), SeasonRef("s2", 2)) },
+            ),
+            tmdbInfo = { _, id -> asked += id; tmdb() },
+        )
+        advanceUntilIdle()
+        vm.selectSeason(SeasonRef("s2", 2))
+        advanceUntilIdle()
+        assertEquals(listOf(5, 6), asked)
+    }
+
+    @Test
     fun `sibling seasons show a selector, a single season does not, and a failure is harmless`() = runTest {
         val many = vm(show(), FakeContent(episodesFor = { chapters(1) to series() }, seasonsFor = { listOf(SeasonRef("s1", 1), SeasonRef("s2", 2)) }))
         val single = vm(show(), FakeContent(episodesFor = { chapters(1) to series() }, seasonsFor = { emptyList() }))

@@ -159,6 +159,9 @@ class TitleInfoViewModel(
 
     private var loadJob: Job? = null
 
+    /** The TMDB `(type, id)` whose data the page already shows; only touched on the main thread. */
+    private var enrichedEntry: Pair<String, Int>? = null
+
     init {
         // Progress follows the item being shown: switching to a sibling season restarts the observation.
         viewModelScope.launch {
@@ -228,9 +231,12 @@ class TitleInfoViewModel(
         }
     }
 
-    /** Best-effort: a failure just means no selector. */
+    /**
+     * Best-effort: a failure leaves the seasons as they were (none the first time, so no selector;
+     * the known ones after a switch, so the selector does not vanish because one season's detail failed).
+     */
     private suspend fun loadSeasons(item: CatalogItem) {
-        val seasons = attempt { content.seasonsOf(item.ref) } ?: emptyList()
+        val seasons = attempt { content.seasonsOf(item.ref) } ?: return
         _state.update { if (it.item.id == item.id) it.copy(seasons = seasons) else it }
     }
 
@@ -241,8 +247,13 @@ class TitleInfoViewModel(
      * as the source drew it.
      */
     private suspend fun enrich(item: CatalogItem, series: GatewaySeries?) {
-        val (type, tmdbId) = tmdbEntry(item, series) ?: return
+        val entry = tmdbEntry(item, series) ?: return
+        // Switching to a sibling season of the same show resolves to the same TMDB entry, and what
+        // it added is kept by selectSeason: nothing new to ask.
+        if (entry == enrichedEntry) return
+        val (type, tmdbId) = entry
         val detail = attempt { tmdbInfo(type, tmdbId) } ?: return
+        enrichedEntry = entry
         _state.update { s -> if (s.item.id != item.id) s else s.copy(info = s.info.withTmdb(detail)) }
     }
 

@@ -60,18 +60,24 @@ fun TitleInfo.withTmdb(t: TmdbInfo): TitleInfo = copy(
     certification = t.certification,
 )
 
-/** The card the person tapped, as the page's first (instant) paint. */
-fun CatalogItem.toTitleInfo(): TitleInfo = TitleInfo(
-    title = title.ifBlank { id },
-    kind = if (type in MAGIS_SERIES) TitleKind.SERIES else TitleKind.MOVIE,
-    poster = poster?.takeIf { it.isNotBlank() },
-    backdrop = backdrop?.takeIf { it.isNotBlank() },
-    synopsis = plainSynopsis(description),
-    genres = genres.filter { it.isNotBlank() },
-    score = score,
-    runtimeMinutes = durationS / 60,
-    episodeCount = episodeCount,
-)
+/**
+ * The card the person tapped, as the page's first (instant) paint. Only a movie's duration is the
+ * title's runtime: a series card's is per episode (as with TMDB's, see [withTmdb]).
+ */
+fun CatalogItem.toTitleInfo(): TitleInfo {
+    val kind = if (type in MAGIS_SERIES) TitleKind.SERIES else TitleKind.MOVIE
+    return TitleInfo(
+        title = title.ifBlank { id },
+        kind = kind,
+        poster = poster?.takeIf { it.isNotBlank() },
+        backdrop = backdrop?.takeIf { it.isNotBlank() },
+        synopsis = plainSynopsis(description),
+        genres = genres.filter { it.isNotBlank() },
+        score = score,
+        runtimeMinutes = if (kind == TitleKind.MOVIE) durationS / 60 else 0,
+        episodeCount = episodeCount,
+    )
+}
 
 /**
  * A Magis search result as the catalog item the page opens with, or null when it is not a Magis
