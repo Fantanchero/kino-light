@@ -97,7 +97,22 @@ class TitleInfoViewModelTest {
         downloadStates: Flow<Map<String, DownloadDisplayState>> = flowOf(emptyMap()),
         tmdbInfo: suspend (String, Int) -> TmdbInfo? = { _, _ -> null },
         tmdbMovieId: suspend (String) -> Int? = { null },
-    ) = TitleInfoViewModel(item, content, playMovie, playSeason, downloads, progress, downloadStates, tmdbInfo, tmdbMovieId, canDownload = true)
+    ) = TitleInfoViewModel(
+        item, content,
+        MagisTitleSource(
+            downloads = downloads,
+            movieImdbId = { ref -> content.movieImdbId(ref) },
+            onPlayMovie = playMovie,
+            onPlaySeason = playSeason,
+        ),
+        progress, downloadStates, tmdbInfo, tmdbMovieId,
+    )
+
+    /** Existing tests name a chapter by number; the view model now takes the chapter itself. */
+    private fun TitleInfoViewModel.play(number: Int) {
+        val chapter = (state.value.episodes as EpisodesState.Loaded).chapters.first { it.number == number }
+        play(chapter)
+    }
 
     private fun TestScope.collect(vm: TitleInfoViewModel): List<TitleInfoEvent> {
         val events = mutableListOf<TitleInfoEvent>()

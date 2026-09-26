@@ -45,7 +45,6 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
-import com.arkiv.player.data.MagisEntities
 import com.arkiv.player.data.gateway.CatalogItem
 import com.arkiv.player.data.gateway.GatewayEpisode
 import com.arkiv.player.ui.rememberGraph
@@ -62,6 +61,7 @@ import com.arkiv.player.ui.titleinfo.chapterNumberLabel
 import com.arkiv.player.ui.titleinfo.creditLines
 import com.arkiv.player.ui.titleinfo.kindLine
 import com.arkiv.player.ui.titleinfo.metaLine
+import com.arkiv.player.ui.titleinfo.magisTitleSource
 import com.arkiv.player.ui.titleinfo.titleInfoViewModel
 
 /** "★ 7.9 · 2026 · 1 h 43 min  ·  Drama, Romance": the metadata line plus the genres. */
@@ -92,7 +92,7 @@ fun TvTitleInfoScreen(
     val graph = rememberGraph()
     val context = LocalContext.current
     val vm: TitleInfoViewModel = viewModel(
-        factory = viewModelFactory { initializer { titleInfoViewModel(graph, item) } },
+        factory = viewModelFactory { initializer { titleInfoViewModel(graph, item, magisTitleSource(graph)) } },
     )
     val state by vm.state.collectAsStateWithLifecycle()
 
@@ -129,7 +129,7 @@ fun TvTitleInfoScreen(
     // and on whether chapters exist, NOT on the button's target: that changes every time progress
     // is saved and would yank the carousel around when the person comes back from the player.
     LaunchedEffect(state.item.id, chapters.isNotEmpty()) {
-        val index = chapters.indexOfFirst { it.number == primary?.chapterNumber }
+        val index = chapters.indexOfFirst { primary?.plays(it) == true }
         if (index >= 0) carouselState.scrollToItem(index)
     }
     // Focus starts on the main button as soon as it can take it: at once for a movie, when the
@@ -332,7 +332,7 @@ fun TvTitleInfoScreen(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             items(episodes.chapters, key = { it.number }) { chapter ->
-                                val id = MagisEntities.episodeIdFor(state.itemId, chapter.number)
+                                val id = state.chapterEpisodeId(chapter)
                                 val chapterProgress = state.progress[id]
                                 TvEpisodeCard(
                                     numberLabel = chapterNumberLabel(info.seasonNumber, chapter.number),
@@ -341,11 +341,11 @@ fun TvTitleInfoScreen(
                                     durationMin = 0,
                                     isCurrent = chapterProgress != null && !chapterProgress.watched && chapterProgress.positionMs > 0,
                                     progress = chapterProgress,
-                                    onClick = { vm.play(chapter.number) },
+                                    onClick = { vm.play(chapter) },
                                     stillUrl = chapter.still ?: info.backdrop ?: info.poster,
                                     episodeTitle = chapterName(chapter),
                                     onFocus = { focusedChapter = chapter },
-                                    modifier = if (chapter.number == primary?.chapterNumber) {
+                                    modifier = if (primary?.plays(chapter) == true) {
                                         Modifier.focusRequester(resumeChipFR).focusProperties {
                                             up = if (state.showSeasonSelector && firstChipComposed()) firstSeasonFR else playFR
                                         }

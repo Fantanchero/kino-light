@@ -60,7 +60,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
-import com.arkiv.player.data.MagisEntities
 import com.arkiv.player.data.db.PlaybackEntity
 import com.arkiv.player.data.gateway.CatalogItem
 import com.arkiv.player.data.gateway.GatewayEpisode
@@ -100,7 +99,7 @@ fun TitleInfoScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val vm: TitleInfoViewModel = viewModel(
-        factory = viewModelFactory { initializer { titleInfoViewModel(graph, item) } },
+        factory = viewModelFactory { initializer { titleInfoViewModel(graph, item, magisTitleSource(graph)) } },
     )
     val state by vm.state.collectAsStateWithLifecycle()
     val askNotifications = rememberPostNotificationsRequest()
@@ -136,7 +135,7 @@ fun TitleInfoScreen(
     }
 
     val info = state.info
-    val movieDownloadId = MagisEntities.movieEpisodeId(state.itemId)
+    val movieDownloadId = state.movieEpisodeId
 
     Box(Modifier.fillMaxSize().background(ArkivBlack)) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
@@ -205,14 +204,14 @@ fun TitleInfoScreen(
                         EpisodesState.Loading -> items(3) { SkeletonRow() }
                         is EpisodesState.Failed -> item(key = "failed") { FailedBlock(episodes.message, onRetry = vm::retry) }
                         is EpisodesState.Loaded -> items(episodes.chapters, key = { it.number }) { chapter ->
-                            val id = MagisEntities.episodeIdFor(state.itemId, chapter.number)
+                            val id = state.chapterEpisodeId(chapter)
                             EpisodeRow(
                                 chapter = chapter,
                                 fallbackImage = info.backdrop ?: info.poster,
                                 progress = state.progress[id],
                                 download = state.downloads[id] ?: DownloadDisplayState.NotDownloaded,
                                 downloadEnabled = vm.canDownload,
-                                onPlay = { vm.play(chapter.number) },
+                                onPlay = { vm.play(chapter) },
                                 onDownload = { askNotifications(); vm.downloadChapters(listOf(chapter.number)) },
                                 onRetry = { retryDownload(id) },
                                 onRequestAction = { action -> pending = PendingAction(id, chapterName(chapter), action) },

@@ -3,26 +3,18 @@ package com.arkiv.player.ui.titleinfo
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.arkiv.player.AppGraph
-import com.arkiv.player.data.MagisEntities
 import com.arkiv.player.data.catalog.TmdbInfo
 import com.arkiv.player.data.db.PlaybackEntity
 import com.arkiv.player.data.gateway.CatalogItem
 import com.arkiv.player.data.gateway.ContentSource
 import com.arkiv.player.data.gateway.GatewayEpisode
-import com.arkiv.player.data.gateway.GatewayResult
 import com.arkiv.player.data.gateway.GatewaySeries
 import com.arkiv.player.data.gateway.SeasonRef
 import com.arkiv.player.data.local.ChapterDownloadState
 import com.arkiv.player.data.local.DownloadDisplayState
-import com.arkiv.player.data.local.DownloadSource
 import com.arkiv.player.data.local.EnqueueOutcome
-import com.arkiv.player.data.magis.MagisRef
-import com.arkiv.player.ui.home.MagisDownloadActions
 import com.arkiv.player.ui.home.chapterEnqueueMessage
-import com.arkiv.player.ui.home.magisDownloadActions
-import com.arkiv.player.ui.home.toGatewayResult
 import com.arkiv.player.ui.search.PlaybackResult
-import com.arkiv.player.ui.search.SearchPlayback
 import com.arkiv.player.ui.search.queuedDownloadToastText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -49,11 +41,13 @@ sealed interface EpisodesState {
 }
 
 data class TitleInfoState(
-    /** The card the page was opened with (or the sibling season switched to). Kept whole so `toGatewayResult()` works exactly as on the home. */
+    /** The card the page was opened with (or the sibling season switched to). Kept whole so the source can rebuild its gateway result exactly as the home does. */
     val item: CatalogItem,
     val info: TitleInfo,
     val episodes: EpisodesState,
-    /** Every season the portal lists, this one included; the selector shows only when there is more than one. */
+    /** Where the title came from: names its library ids, playback and seasons model. */
+    val source: TitleSource,
+    /** Every season the source lists, this one included; the selector shows only when there is more than one. */
     val seasons: List<SeasonRef> = emptyList(),
     /** Playback progress by episode id. Read-only. */
     val progress: Map<String, PlaybackEntity> = emptyMap(),
@@ -61,13 +55,15 @@ data class TitleInfoState(
     /** A play is being prepared: the button shows a spinner and ignores taps. */
     val resolving: Boolean = false,
 ) {
-    val itemId: String get() = MagisEntities.itemIdFor(item.id)
+    val itemId: String get() = source.itemId(item)
+    val movieEpisodeId: String get() = source.movieEpisodeId(item)
+    fun chapterEpisodeId(chapter: GatewayEpisode): String = source.chapterEpisodeId(item, chapter)
 
     val primary: PrimaryAction?
         get() = primaryAction(
             info.kind,
-            MagisEntities.movieEpisodeId(itemId),
-            { MagisEntities.episodeIdFor(itemId, it.number) },
+            movieEpisodeId,
+            { chapterEpisodeId(it) },
             (episodes as? EpisodesState.Loaded)?.chapters,
             progress,
         )
@@ -94,36 +90,37 @@ sealed interface TitleInfoEvent {
 }
 
 /**
- * State and actions of the info page, shared by the phone and TV screens.
+ * State and actions of the info page, shared by the phone and TV screens and by every source.
  *
  * Opens instantly from the card that was tapped and then loads, in the background: the series'
  * chapters (the only step whose failure the person sees), its sibling seasons, and, when TMDB
- * knows this exact title, its year, runtime, genres, cast and rating. Reads playback progress and download state; **writes nothing**.
- * Only [play] and the download functions reach code that saves to the library, and they do it
- * through the same paths the home and search already use.
+ * knows this exact title, its year, runtime, genres, cast and rating. Reads playback progress and
+ * download state; **writes nothing**. Only [play] and the download functions reach code that saves
+ * to the library, and they do it through the same paths the home and search already use.
  *
- * Every dependency is a function or a flow so the whole thing is testable without an `AppGraph`.
+ * Everything that differs per source lives in [source]; every dependency is a function or a flow so
+ * the whole thing is testable without an `AppGraph`.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class TitleInfoViewModel(
     initial: CatalogItem,
     private val content: ContentSource,
-    private val playMovie: suspend (GatewayResult) -> PlaybackResult,
-    private val playSeason: suspend (GatewayResult, List<GatewayEpisode>, GatewayEpisode, GatewaySeries?) -> PlaybackResult,
-    private val downloads: MagisDownloadActions,
+    private val source: TitleSource,
     observeProgress: (itemId: String) -> Flow<Map<String, PlaybackEntity>>,
     downloadStates: Flow<Map<String, DownloadDisplayState>>,
     private val tmdbInfo: suspend (type: String, tmdbId: Int) -> TmdbInfo?,
     private val tmdbMovieId: suspend (imdbId: String) -> Int?,
-    val canDownload: Boolean,
 ) : ViewModel() {
 
+    val canDownload: Boolean get() = source.canDownload
+
     private val _state = MutableStateFlow(
-        initial.toTitleInfo().let { info ->
+        initial.toTitleInfo().copy(year = source.initialYear).let { info ->
             TitleInfoState(
                 item = initial,
                 info = info,
                 episodes = if (info.kind == TitleKind.SERIES) EpisodesState.Loading else EpisodesState.None,
+                source = source,
             )
         },
     )
@@ -135,10 +132,10 @@ class TitleInfoViewModel(
     private var loadJob: Job? = null
 
     init {
-        // Progress follows the season being shown: switching season restarts the observation.
+        // Progress follows the item being shown: switching to a sibling season restarts the observation.
         viewModelScope.launch {
-            _state.map { it.item.id }.distinctUntilChanged()
-                .flatMapLatest { contentId -> observeProgress(MagisEntities.itemIdFor(contentId)) }
+            _state.map { source.itemId(it.item) }.distinctUntilChanged()
+                .flatMapLatest { itemId -> observeProgress(itemId) }
                 .collect { rows -> _state.update { it.copy(progress = rows) } }
         }
         viewModelScope.launch {
@@ -200,8 +197,9 @@ class TitleInfoViewModel(
 
     /**
      * Best-effort: when TMDB has this exact title, adds what only it knows (see [withTmdb]). A series
-     * is identified by the TMDB id its chapters call already resolved; a movie by the IMDb id its
-     * source publishes, never by its title. Any failure or miss leaves the page as the portal drew it.
+     * is identified by the TMDB id its chapters call already resolved (or the source's hint); a
+     * movie by an id the source published, never by its title. Any failure or miss leaves the page
+     * as the source drew it.
      */
     private suspend fun enrich(item: CatalogItem, series: GatewaySeries?) {
         val (type, tmdbId) = tmdbEntry(item, series) ?: return
@@ -210,32 +208,32 @@ class TitleInfoViewModel(
     }
 
     /** The TMDB `(type, id)` this page is about, or null when it cannot be pinned down exactly. */
-    private suspend fun tmdbEntry(item: CatalogItem, series: GatewaySeries?): Pair<String, Int>? =
-        when (_state.value.info.kind) {
-            TitleKind.SERIES -> series?.tmdbId?.takeIf { it > 0 }?.let { "tv" to it }
-            TitleKind.MOVIE -> attempt { content.movieImdbId(item.ref) }
-                ?.let { imdb -> attempt { tmdbMovieId(imdb) } }
-                ?.let { "movie" to it }
+    private suspend fun tmdbEntry(item: CatalogItem, series: GatewaySeries?): Pair<String, Int>? {
+        val hint = attempt { source.tmdbHint(item) } ?: TmdbHint()
+        return when (_state.value.info.kind) {
+            TitleKind.SERIES ->
+                (series?.tmdbId?.takeIf { it > 0 } ?: hint.tmdbId.takeIf { it > 0 })?.let { "tv" to it }
+            TitleKind.MOVIE ->
+                (
+                    hint.tmdbId.takeIf { it > 0 }
+                        ?: hint.imdbId.takeIf { it.isNotBlank() }?.let { imdb -> attempt { tmdbMovieId(imdb) } }
+                    )?.let { "movie" to it }
         }
+    }
 
     fun retry() {
         if (_state.value.episodes is EpisodesState.Failed) loadEpisodes()
     }
 
     /**
-     * Switches to a sibling season. The portal lists only a content id and a number for it, so the
-     * item is rebuilt from the current one: its ref from the new id, its title through [seasonTitle].
-     * Everything else on the page (what TMDB added included) is kept: it is the same series.
+     * Switches to a sibling season: the source builds the item for it, and everything else on the
+     * page (what TMDB added included) is kept, since it is the same series.
      */
     fun selectSeason(season: SeasonRef) {
+        val model = source.seasons as? SeasonModel.Siblings ?: return
         val current = _state.value.item
         if (season.contentId == current.id) return
-        val next = current.copy(
-            id = season.contentId,
-            ref = MagisRef(season.contentId, current.type, 0).encode(),
-            title = seasonTitle(current.title, season.number),
-            episodeCount = 0,
-        )
+        val next = model.itemFor(current, season)
         _state.update { s ->
             s.copy(
                 item = next,
@@ -250,24 +248,24 @@ class TitleInfoViewModel(
     // ---- play ----
 
     /**
-     * Plays the movie, or a chapter of the series ([chapterNumber], or the one the main button
-     * offers). Ignored while another play is resolving, and for a series whose chapters are not
-     * loaded: it needs them to know what to play. A series goes through the season path with the
-     * chapters and series this page already loaded (that path saves the whole season and must not
-     * re-request them).
+     * Plays the movie, or a chapter of the series ([chapter], or the one the main button offers).
+     * Ignored while another play is resolving, and for a series whose chapters are not loaded: it
+     * needs them to know what to play. A series goes through the season path with the chapters and
+     * series this page already loaded (that path saves the whole series and must not re-request
+     * them).
      */
-    fun play(chapterNumber: Int? = null) {
+    fun play(chapter: GatewayEpisode? = null) {
         val s = _state.value
         if (s.resolving) return
-        val result = s.item.toGatewayResult()
+        val result = source.gatewayResult(s.item)
         val loaded = s.episodes as? EpisodesState.Loaded
-        val chosen = loaded?.chapters?.firstOrNull { it.number == (chapterNumber ?: s.primary?.chapterNumber) }
+        val chosen = chapter ?: s.primary?.let { p -> loaded?.chapters?.firstOrNull(p::plays) }
         if (s.info.kind == TitleKind.SERIES && chosen == null) return
         viewModelScope.launch {
             _state.update { it.copy(resolving = true) }
             val outcome = try {
-                if (chosen != null && loaded != null) playSeason(result, loaded.chapters, chosen, loaded.series)
-                else playMovie(result)
+                if (chosen != null && loaded != null) source.playSeason(result, loaded.chapters, chosen, loaded.series)
+                else source.playMovie(result)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -287,9 +285,10 @@ class TitleInfoViewModel(
 
     fun downloadMovie() {
         val s = _state.value
+        val actions = source.downloads ?: return
         if (s.info.kind != TitleKind.MOVIE) return
         viewModelScope.launch {
-            val outcome = attempt { downloads.enqueueMovie(s.item.toGatewayResult()) }
+            val outcome = attempt { actions.enqueueMovie(source.gatewayResult(s.item)) }
             if (outcome == null) {
                 _events.send(TitleInfoEvent.Message("No se pudo preparar la descarga."))
                 return@launch
@@ -304,11 +303,12 @@ class TitleInfoViewModel(
 
     fun downloadChapters(numbers: List<Int>) {
         val s = _state.value
+        val actions = source.downloads ?: return
         val loaded = s.episodes as? EpisodesState.Loaded ?: return
         val chosen = loaded.chapters.filter { it.number in numbers }
         if (chosen.isEmpty()) return
         viewModelScope.launch {
-            val outcomes = attempt { downloads.enqueueChapters(s.item.toGatewayResult(), chosen, loaded.series) } ?: emptyList()
+            val outcomes = attempt { actions.enqueueChapters(source.gatewayResult(s.item), chosen, loaded.series) } ?: emptyList()
             _events.send(
                 TitleInfoEvent.Downloaded(outcomes, chapterEnqueueMessage(outcomes, chosen.size), noticeDuplicates = false),
             )
@@ -330,20 +330,15 @@ class TitleInfoViewModel(
     }
 }
 
-/** Wires the view model to the app's real sources. Used by both the phone and the TV screen. */
-internal fun titleInfoViewModel(graph: AppGraph, item: CatalogItem): TitleInfoViewModel {
-    val playback = SearchPlayback(graph)
-    return TitleInfoViewModel(
+/** Wires the view model to the app's real content and TMDB. Used by both the phone and the TV screen. */
+internal fun titleInfoViewModel(graph: AppGraph, item: CatalogItem, source: TitleSource): TitleInfoViewModel =
+    TitleInfoViewModel(
         initial = item,
         content = graph.contentSource,
-        playMovie = { playback.playMagis(it) },
-        playSeason = { season, chapters, chosen, series -> playback.playMagisSeason(season, chapters, chosen, series) },
-        downloads = magisDownloadActions(graph, playback),
+        source = source,
         observeProgress = { itemId -> graph.repository.observePlayback(itemId) },
         downloadStates = graph.repository.observeDownloadRows()
             .map { rows -> rows.associate { it.episodeId to ChapterDownloadState.of(it) } },
         tmdbInfo = { type, tmdbId -> graph.tmdbApi.info(type, tmdbId) },
         tmdbMovieId = { imdbId -> graph.tmdbApi.movieIdByImdb(imdbId) },
-        canDownload = DownloadSource.hasStrategy("magis", graph.downloadStrategies.keys),
     )
-}
