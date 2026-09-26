@@ -1141,6 +1141,15 @@ class ArkivRepository(
     suspend fun playbackForItem(itemId: String): Map<String, PlaybackEntity> =
         playbackDao.observePlaybackForItem(itemId).first().associateBy { it.episodeId }
 
+    /**
+     * Live view of an item's playback progress by episode id. Read-only: the info page uses it to
+     * decide "Continuar" without saving anything, which is why it is not [playbackForItem]'s
+     * one-shot `first()`: the page stays on the back stack while the player is open and has to
+     * update when the person comes back.
+     */
+    fun observePlayback(itemId: String): Flow<Map<String, PlaybackEntity>> =
+        playbackDao.observePlaybackForItem(itemId).map { rows -> rows.associateBy { it.episodeId } }
+
     // --- Opening/ending markers (per series/item) ---
 
     /**
