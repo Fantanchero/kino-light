@@ -49,6 +49,8 @@ data class TitleInfoState(
     val source: TitleSource,
     /** Every season the source lists, this one included; the selector shows only when there is more than one. */
     val seasons: List<SeasonRef> = emptyList(),
+    /** In-list sources only: the season the person chose. Null until they choose (see [currentSeason]). */
+    val selectedSeason: Int? = null,
     /** Playback progress by episode id. Read-only. */
     val progress: Map<String, PlaybackEntity> = emptyMap(),
     val downloads: Map<String, DownloadDisplayState> = emptyMap(),
@@ -69,6 +71,30 @@ data class TitleInfoState(
         )
 
     val showSeasonSelector: Boolean get() = seasons.size > 1
+
+    /** The loaded chapters, or null while they are not. */
+    val chapters: List<GatewayEpisode>? get() = (episodes as? EpisodesState.Loaded)?.chapters
+
+    /**
+     * In-list sources only (null otherwise): the season being shown. The person's choice; else the
+     * season of the chapter the main button offers; else the lowest one.
+     */
+    val currentSeason: Int?
+        get() {
+            if (source.seasons !is SeasonModel.InList) return null
+            return selectedSeason ?: primary?.season ?: chapters?.minOfOrNull { it.seasonOrOne }
+        }
+
+    /** The chapters the page lists: every one, or the current season's when one list holds several seasons. */
+    val visibleChapters: List<GatewayEpisode>
+        get() {
+            val all = chapters.orEmpty()
+            val season = currentSeason ?: return all
+            return if (seasons.size > 1) all.filter { it.seasonOrOne == season } else all
+        }
+
+    fun isCurrentSeason(season: SeasonRef): Boolean =
+        currentSeason?.let { it == season.number } ?: (season.contentId == item.id)
 }
 
 /** One-shot things the screen reacts to. */
@@ -175,16 +201,22 @@ class TitleInfoViewModel(
                 _state.update { it.copy(episodes = EpisodesState.Failed("No hay episodios disponibles por ahora")) }
                 return@launch
             }
+            val inList = source.seasons is SeasonModel.InList
             _state.update { s ->
                 s.copy(
                     episodes = EpisodesState.Loaded(chapters, series),
+                    seasons = if (inList) {
+                        chapters.map { it.seasonOrOne }.distinct().sorted().map { SeasonRef(it.toString(), it) }
+                    } else {
+                        s.seasons
+                    },
                     info = s.info.copy(
                         seasonNumber = series?.seasonNumber?.takeIf { it > 0 } ?: s.info.seasonNumber,
                         episodeCount = chapters.size.takeIf { it > 0 } ?: s.info.episodeCount,
                     ),
                 )
             }
-            launch { loadSeasons(item) }
+            if (!inList) launch { loadSeasons(item) }
             launch { enrich(item, series) }
         }
     }
@@ -226,23 +258,28 @@ class TitleInfoViewModel(
     }
 
     /**
-     * Switches to a sibling season: the source builds the item for it, and everything else on the
-     * page (what TMDB added included) is kept, since it is the same series.
+     * Chooses a season. Sibling sources swap the page's item for the one the source builds (a new
+     * chapter request); an in-list source only changes which chapters are shown, with no request.
+     * Everything else on the page (what TMDB added included) is kept: it is the same series.
      */
     fun selectSeason(season: SeasonRef) {
-        val model = source.seasons as? SeasonModel.Siblings ?: return
-        val current = _state.value.item
-        if (season.contentId == current.id) return
-        val next = model.itemFor(current, season)
-        _state.update { s ->
-            s.copy(
-                item = next,
-                info = s.info.copy(title = next.title.ifBlank { next.id }, seasonNumber = season.number, episodeCount = 0),
-                episodes = EpisodesState.Loading,
-                progress = emptyMap(),
-            )
+        when (val model = source.seasons) {
+            SeasonModel.InList -> _state.update { it.copy(selectedSeason = season.number) }
+            is SeasonModel.Siblings -> {
+                val current = _state.value.item
+                if (season.contentId == current.id) return
+                val next = model.itemFor(current, season)
+                _state.update { s ->
+                    s.copy(
+                        item = next,
+                        info = s.info.copy(title = next.title.ifBlank { next.id }, seasonNumber = season.number, episodeCount = 0),
+                        episodes = EpisodesState.Loading,
+                        progress = emptyMap(),
+                    )
+                }
+                loadEpisodes()
+            }
         }
-        loadEpisodes()
     }
 
     // ---- play ----
