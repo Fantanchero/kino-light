@@ -76,6 +76,12 @@ class MagisTitleSourceTest {
     }
 
     @Test
+    fun `Magis keeps the fixed failure line on the TV, as before sources existed`() {
+        // The raw cause of a Magis failure carries the portal's host and English fragments.
+        assertFalse(source().showsFailureDetail)
+    }
+
+    @Test
     fun `a source with no badge and no year of its own`() {
         val s = source()
         assertEquals(null, s.badge)

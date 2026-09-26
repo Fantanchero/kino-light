@@ -192,6 +192,18 @@ class TitleRouteTest {
     }
 
     @Test
+    fun `an image URL as long as a plugin may send is kept so playing still saves its art`() {
+        // PluginOutput allows 2048 characters; signed CDN URLs reach that. playPlugin reads the art
+        // from the same result, so dropping such a URL left the library row without a poster.
+        val longest = "https://cdn/" + "x".repeat(2048 - "https://cdn/".length)
+        val args = pluginArgs(pluginResult(extra = mapOf("poster" to longest, "backdrop" to longest)))
+        val item = titleItemFrom { args[it] }!!
+        assertEquals(longest, item.poster)
+        assertEquals(longest, item.backdrop)
+        assertTrue(titleRoute(pluginResult(extra = mapOf("poster" to longest, "backdrop" to longest)))!!.length < 15_000)
+    }
+
+    @Test
     fun `an image URL at the limit is kept`() {
         val atLimit = "https://img/" + "x".repeat(TITLE_URL_MAX - "https://img/".length)
         val args = pluginArgs(pluginResult(extra = mapOf("poster" to atLimit)))

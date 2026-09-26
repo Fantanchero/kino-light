@@ -54,6 +54,13 @@ interface TitleSource {
     /** A year the source already knows, shown before TMDB answers. */
     val initialYear: String get() = ""
 
+    /**
+     * Whether the TV page prints a failure's own message under its fixed line. A plugin's message is
+     * worded for the person ("Esto venía del plugin X, que ya no está instalado"); Magis's raw cause
+     * names the portal's host in English, so Magis keeps the fixed line alone, as before sources.
+     */
+    val showsFailureDetail: Boolean get() = false
+
     /** The library item id progress rows are keyed under. */
     fun itemId(item: CatalogItem): String
     fun movieEpisodeId(item: CatalogItem): String

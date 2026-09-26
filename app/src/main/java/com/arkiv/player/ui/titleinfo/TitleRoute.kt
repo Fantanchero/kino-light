@@ -4,14 +4,19 @@ import com.arkiv.player.data.gateway.CatalogItem
 import com.arkiv.player.data.gateway.GatewayResult
 import com.arkiv.player.data.magis.MagisRef
 import com.arkiv.player.data.plugin.PluginIds
+import com.arkiv.player.data.plugin.PluginOutput
 import com.arkiv.player.data.plugin.PluginRef
 import java.net.URLEncoder
 
 /** How many characters of a synopsis travel in the route. See [clipSynopsis]. */
 const val TITLE_DESC_MAX = 600
 
-/** Longest image URL a route carries. A longer one is left out: a cut URL is a broken image. */
-const val TITLE_URL_MAX = 1024
+/**
+ * Longest image URL a route carries: the longest one a plugin may send (signed CDN URLs reach it,
+ * and playing saves the library row's art from the same result). A longer one cannot come from a
+ * plugin and is left out: a cut URL is a broken image.
+ */
+const val TITLE_URL_MAX = PluginOutput.MAX_IMAGE_URL_CHARS
 
 /** Where the page's item came from, decoded from the route. */
 sealed interface TitleOrigin {

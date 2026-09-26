@@ -113,6 +113,12 @@ class PluginTitleSourceTest {
     }
 
     @Test
+    fun `a plugin's own failure message reaches the person`() {
+        // "Esto venía del plugin X, que ya no está instalado", "Configura X en Ajustes ▸ Plugins"…
+        assertTrue(source().showsFailureDetail)
+    }
+
+    @Test
     fun `the TMDB hint is the ids the plugin sent`() = runTest {
         assertEquals(TmdbHint(603, "tt0133093"), source().tmdbHint(movie()))
         assertEquals(TmdbHint(), source(PluginTitleExtras()).tmdbHint(show()))

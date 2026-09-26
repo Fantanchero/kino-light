@@ -41,6 +41,7 @@ class PluginTitleSource(
     override val badge: TitleBadge? =
         extras.pluginName.takeIf { it.isNotBlank() }?.let { TitleBadge(it, PluginColors.parse(extras.color)) }
     override val initialYear: String get() = extras.year
+    override val showsFailureDetail: Boolean get() = true
 
     /**
      * The library item id, or an id no row can have when the ref is not a plugin ref of the item's

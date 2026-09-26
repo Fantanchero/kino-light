@@ -329,12 +329,23 @@ fun TvTitleInfoScreen(
                     when (val episodes = state.episodes) {
                         is EpisodesState.Failed -> Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(start = 48.dp),
+                            modifier = Modifier.padding(horizontal = 48.dp),
                         ) {
-                            Text(
-                                episodes.message.ifBlank { "No se pudieron cargar los episodios" },
-                                color = Color.White,
-                            )
+                            // The fixed line for every source; a plugin's own message (worded for the
+                            // person) goes under it. Bounded and weighted so a long message can never
+                            // push the button off the screen.
+                            Column(Modifier.weight(1f, fill = false)) {
+                                Text("No se pudieron cargar los episodios", color = Color.White)
+                                if (state.source.showsFailureDetail && episodes.message.isNotBlank()) {
+                                    Text(
+                                        episodes.message,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = ArkivTextSecondary,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
                             Button(
                                 onClick = {
                                     val setup = episodes.setupPluginId
