@@ -442,6 +442,7 @@ fun ArkivRoot(
                         item = item,
                         onBack = { navController.popBackStack() },
                         onPlay = { playEpisode(it) },
+                        onConfigurePlugin = { id -> navController.navigate("plugin_config/${Uri.encode(id)}") },
                     )
                 }
             }

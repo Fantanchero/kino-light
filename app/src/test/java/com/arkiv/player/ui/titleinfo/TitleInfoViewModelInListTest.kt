@@ -5,12 +5,14 @@ import com.arkiv.player.data.db.PlaybackEntity
 import com.arkiv.player.data.gateway.CatalogItem
 import com.arkiv.player.data.gateway.ContentSource
 import com.arkiv.player.data.gateway.GatewayEpisode
+import com.arkiv.player.data.gateway.GatewayException
 import com.arkiv.player.data.gateway.GatewayPlayable
 import com.arkiv.player.data.gateway.GatewayResult
 import com.arkiv.player.data.gateway.GatewaySearchQuery
 import com.arkiv.player.data.gateway.GatewaySeries
 import com.arkiv.player.data.gateway.SearchEvent
 import com.arkiv.player.data.gateway.SeasonRef
+import com.arkiv.player.data.plugin.PluginSetupRequiredException
 import com.arkiv.player.ui.home.MagisDownloadActions
 import com.arkiv.player.ui.search.PlaybackResult
 import kotlinx.coroutines.Dispatchers
@@ -40,13 +42,18 @@ class TitleInfoViewModelInListTest {
 
     // ---- fixtures ----
 
-    private class ListContent(val chapters: List<GatewayEpisode>, val tmdbId: Int = 0) : ContentSource {
+    private class ListContent(
+        val chapters: List<GatewayEpisode>,
+        val tmdbId: Int = 0,
+        var failure: Exception? = null,
+    ) : ContentSource {
         var requests = 0
         override fun recognizes(ref: String) = true
         override fun search(ctx: GatewaySearchQuery): Flow<SearchEvent> = emptyFlow()
         override suspend fun resolve(ref: String): GatewayPlayable = error("not used")
         override suspend fun episodesWithSeries(ref: String): Pair<List<GatewayEpisode>, GatewaySeries?> {
             requests++
+            failure?.let { throw it }
             val series = if (tmdbId > 0) GatewaySeries(imdbId = "", tmdbId = tmdbId, seasonNumber = 1) else null
             return chapters to series
         }
@@ -205,6 +212,44 @@ class TitleInfoViewModelInListTest {
         val chosen = src.played.single().second
         assertEquals(2, chosen.seasonOrOne)
         assertEquals(2, chosen.number)
+    }
+
+    // ---- a plugin that is not ready ----
+
+    @Test
+    fun `a plugin that needs setup is reported with its id so the page can offer Configurar`() = runTest {
+        val content = ListContent(threeSeasons, failure = PluginSetupRequiredException("demo", "Configura Demo en Ajustes ▸ Plugins"))
+        val vm = vm(content = content)
+        advanceUntilIdle()
+        val failed = vm.state.value.episodes as EpisodesState.Failed
+        assertEquals("Configura Demo en Ajustes ▸ Plugins", failed.message)
+        assertEquals("demo", failed.setupPluginId)
+    }
+
+    @Test
+    fun `any other plugin failure keeps its own message and offers only Reintentar`() = runTest {
+        val content = ListContent(
+            threeSeasons,
+            failure = GatewayException("Esto venía del plugin Demo, que ya no está instalado"),
+        )
+        val vm = vm(content = content)
+        advanceUntilIdle()
+        val failed = vm.state.value.episodes as EpisodesState.Failed
+        assertEquals("Esto venía del plugin Demo, que ya no está instalado", failed.message)
+        assertEquals(null, failed.setupPluginId)
+        assertEquals(null, vm.state.value.primary)
+    }
+
+    @Test
+    fun `after the person configures the plugin a retry loads the chapters`() = runTest {
+        val content = ListContent(threeSeasons, failure = PluginSetupRequiredException("demo", "Configura Demo"))
+        val vm = vm(content = content)
+        advanceUntilIdle()
+        content.failure = null
+        vm.retry()
+        advanceUntilIdle()
+        assertTrue(vm.state.value.episodes is EpisodesState.Loaded)
+        assertEquals(2, content.requests)
     }
 
     // ---- TMDB hints ----

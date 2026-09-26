@@ -13,6 +13,7 @@ import com.arkiv.player.data.gateway.SeasonRef
 import com.arkiv.player.data.local.ChapterDownloadState
 import com.arkiv.player.data.local.DownloadDisplayState
 import com.arkiv.player.data.local.EnqueueOutcome
+import com.arkiv.player.data.plugin.PluginSetupRequiredException
 import com.arkiv.player.ui.home.chapterEnqueueMessage
 import com.arkiv.player.ui.search.PlaybackResult
 import com.arkiv.player.ui.search.queuedDownloadToastText
@@ -37,7 +38,8 @@ sealed interface EpisodesState {
     data object None : EpisodesState
     data object Loading : EpisodesState
     data class Loaded(val chapters: List<GatewayEpisode>, val series: GatewaySeries?) : EpisodesState
-    data class Failed(val message: String) : EpisodesState
+    /** [setupPluginId] is set when the failure is "this plugin needs configuring": the page offers Configurar. */
+    data class Failed(val message: String, val setupPluginId: String? = null) : EpisodesState
 }
 
 data class TitleInfoState(
@@ -189,7 +191,12 @@ class TitleInfoViewModel(
             } catch (e: Exception) {
                 _state.update { s ->
                     if (s.item.id != item.id) s
-                    else s.copy(episodes = EpisodesState.Failed(e.message ?: "No se pudieron cargar los episodios"))
+                    else s.copy(
+                        episodes = EpisodesState.Failed(
+                            e.message ?: "No se pudieron cargar los episodios",
+                            setupPluginId = (e as? PluginSetupRequiredException)?.pluginId,
+                        ),
+                    )
                 }
                 return@launch
             }

@@ -94,6 +94,7 @@ fun TitleInfoScreen(
     item: CatalogItem,
     onBack: () -> Unit,
     onPlay: (episodeId: String) -> Unit,
+    onConfigurePlugin: (pluginId: String) -> Unit,
 ) {
     val graph = rememberGraph()
     val context = LocalContext.current
@@ -102,6 +103,10 @@ fun TitleInfoScreen(
         factory = viewModelFactory { initializer { titleInfoViewModel(graph, item, magisTitleSource(graph)) } },
     )
     val state by vm.state.collectAsStateWithLifecycle()
+    // Back from Configurar: ask again, with the new settings (the plugin's own Ver más does the same).
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+        if ((vm.state.value.episodes as? EpisodesState.Failed)?.setupPluginId != null) vm.retry()
+    }
     val askNotifications = rememberPostNotificationsRequest()
     val notifyDuplicates = rememberDuplicateDownloadNotice()
     var pending by remember { mutableStateOf<PendingAction?>(null) }
@@ -202,7 +207,9 @@ fun TitleInfoScreen(
                     when (val episodes = state.episodes) {
                         EpisodesState.None -> Unit
                         EpisodesState.Loading -> items(3) { SkeletonRow() }
-                        is EpisodesState.Failed -> item(key = "failed") { FailedBlock(episodes.message, onRetry = vm::retry) }
+                        is EpisodesState.Failed -> item(key = "failed") {
+                            FailedBlock(episodes.message, episodes.setupPluginId, onRetry = vm::retry, onConfigure = onConfigurePlugin)
+                        }
                         is EpisodesState.Loaded -> items(episodes.chapters, key = { it.number }) { chapter ->
                             val id = state.chapterEpisodeId(chapter)
                             EpisodeRow(
@@ -475,13 +482,15 @@ private fun SkeletonRow() {
 }
 
 @Composable
-private fun FailedBlock(message: String, onRetry: () -> Unit) {
+private fun FailedBlock(message: String, setupPluginId: String?, onRetry: () -> Unit, onConfigure: (String) -> Unit) {
     val fixed = "No se pudieron cargar los episodios"
     Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(fixed, color = Color.White, style = MaterialTheme.typography.bodyMedium)
         message.takeIf { it.isNotBlank() && it != fixed }?.let {
             Text(it, color = ArkivTextSecondary, style = MaterialTheme.typography.bodySmall)
         }
-        TextButton(onClick = onRetry) { Text("Reintentar") }
+        TextButton(onClick = { if (setupPluginId != null) onConfigure(setupPluginId) else onRetry() }) {
+            Text(if (setupPluginId != null) "Configurar" else "Reintentar")
+        }
     }
 }

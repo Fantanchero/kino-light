@@ -86,6 +86,7 @@ internal fun isComposedItem(visibleKeys: List<Any>, key: Any?): Boolean = key !=
 fun TvTitleInfoScreen(
     item: CatalogItem,
     onPlay: (episodeId: String) -> Unit,
+    onConfigurePlugin: (pluginId: String) -> Unit,
     onBack: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
@@ -95,6 +96,10 @@ fun TvTitleInfoScreen(
         factory = viewModelFactory { initializer { titleInfoViewModel(graph, item, magisTitleSource(graph)) } },
     )
     val state by vm.state.collectAsStateWithLifecycle()
+    // Back from Configurar: ask again, with the new settings (the plugin's own Ver más does the same).
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+        if ((vm.state.value.episodes as? EpisodesState.Failed)?.setupPluginId != null) vm.retry()
+    }
 
     LaunchedEffect(vm) {
         vm.events.collect { event ->
@@ -318,13 +323,19 @@ fun TvTitleInfoScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(start = 48.dp),
                         ) {
-                            Text("No se pudieron cargar los episodios", color = Color.White)
+                            Text(
+                                episodes.message.ifBlank { "No se pudieron cargar los episodios" },
+                                color = Color.White,
+                            )
                             Button(
-                                onClick = vm::retry,
+                                onClick = {
+                                    val setup = episodes.setupPluginId
+                                    if (setup != null) onConfigurePlugin(setup) else vm.retry()
+                                },
                                 colors = arkivTvButtonColors(),
                                 border = arkivTvButtonBorder(),
                                 modifier = Modifier.padding(start = 16.dp),
-                            ) { Text("Reintentar") }
+                            ) { Text(if (episodes.setupPluginId != null) "Configurar" else "Reintentar") }
                         }
                         is EpisodesState.Loaded -> LazyRow(
                             state = carouselState,

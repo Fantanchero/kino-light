@@ -193,6 +193,7 @@ fun ArkivTvRoot(
                 TvTitleInfoScreen(
                     item = item,
                     onPlay = { goToPlayer(it) },
+                    onConfigurePlugin = { id -> navController.navigate("plugin_config/${Uri.encode(id)}") },
                     onBack = { navController.popBackStack() },
                 )
             }
