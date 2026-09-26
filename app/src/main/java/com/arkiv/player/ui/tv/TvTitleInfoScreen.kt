@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -58,6 +59,7 @@ import com.arkiv.player.ui.titleinfo.TitleKind
 import com.arkiv.player.ui.titleinfo.chapterLine
 import com.arkiv.player.ui.titleinfo.chapterName
 import com.arkiv.player.ui.titleinfo.chapterNumberLabel
+import com.arkiv.player.ui.titleinfo.creditLines
 import com.arkiv.player.ui.titleinfo.kindLine
 import com.arkiv.player.ui.titleinfo.metaLine
 import com.arkiv.player.ui.titleinfo.titleInfoViewModel
@@ -179,6 +181,18 @@ fun TvTitleInfoScreen(
                         modifier = Modifier.padding(top = 6.dp),
                     )
                 }
+                // Only a movie has room for a tagline: on a series page the carousel takes the space.
+                if (focused == null && info.kind == TitleKind.MOVIE && info.tagline.isNotBlank()) {
+                    Text(
+                        info.tagline,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontStyle = FontStyle.Italic,
+                        color = ArkivTextSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 8.dp).widthIn(max = 640.dp),
+                    )
+                }
                 val synopsis = if (focused != null) focused.overview.orEmpty() else info.synopsis
                 if (synopsis.isNotBlank()) {
                     Text(
@@ -188,6 +202,19 @@ fun TvTitleInfoScreen(
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(top = 10.dp).widthIn(max = 640.dp),
+                    )
+                }
+                // One line, so it costs a series page (whose carousel takes most of the height) as
+                // little as it can; what does not fit is cut with an ellipsis.
+                val credits = if (focused == null) info.creditLines(maxCast = 4).joinToString("  ·  ") else ""
+                if (credits.isNotBlank()) {
+                    Text(
+                        credits,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = ArkivTextSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 8.dp).widthIn(max = 640.dp),
                     )
                 }
                 Button(

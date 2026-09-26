@@ -73,6 +73,16 @@ class TmdbInfoParseTest {
         assertNull(info.voteAverage)
     }
 
+    @Test fun `the TV genres TMDB leaves in English are translated`() {
+        // Measured: even with language=es-MX these three come back in English.
+        val info = parseTmdbInfo(
+            """{"id":1,"genres":[{"id":10759,"name":"Action & Adventure"},{"id":10765,"name":"Sci-Fi & Fantasy"},
+               {"id":10768,"name":"War & Politics"},{"id":18,"name":"Drama"}]}""",
+            "tv",
+        )!!
+        assertEquals(listOf("Acción y aventura", "Ciencia ficción y fantasía", "Bélica y política", "Drama"), info.genres)
+    }
+
     @Test fun `zero votes means no score`() {
         assertNull(parseTmdbInfo("""{"id":1,"vote_average":0}""", "movie")!!.voteAverage)
         assertNull(parseTmdbInfo("""{"id":1,"vote_average":0.0}""", "movie")!!.voteAverage)

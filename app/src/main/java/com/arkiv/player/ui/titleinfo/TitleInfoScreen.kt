@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -166,7 +167,26 @@ fun TitleInfoScreen(
                                 modifier = Modifier.padding(top = 16.dp),
                             )
                         }
+                        if (info.tagline.isNotBlank()) {
+                            Text(
+                                info.tagline,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontStyle = FontStyle.Italic,
+                                color = ArkivTextSecondary,
+                                modifier = Modifier.padding(top = 16.dp),
+                            )
+                        }
                         Synopsis(info.synopsis)
+                        info.creditLines(maxCast = 6).forEach { line ->
+                            Text(
+                                line,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = ArkivTextSecondary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(top = 8.dp),
+                            )
+                        }
                     }
                 }
                 if (info.kind == TitleKind.SERIES) {

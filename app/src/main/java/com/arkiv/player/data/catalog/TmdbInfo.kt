@@ -33,6 +33,16 @@ data class TmdbInfo(
     val certification: String,
 )
 
+/**
+ * The TV genres TMDB has no Spanish name for: with `language=es-MX` they still come back in English
+ * (measured on a series page).
+ */
+private val TV_GENRES_IN_SPANISH = mapOf(
+    "Action & Adventure" to "Acción y aventura",
+    "Sci-Fi & Fantasy" to "Ciencia ficción y fantasía",
+    "War & Politics" to "Bélica y política",
+)
+
 /** `null` (JSON) and a missing key are both empty; Android's `optString` would say "null". */
 private fun JSONObject.text(name: String): String = if (isNull(name)) "" else optString(name)
 
@@ -56,7 +66,8 @@ internal fun parseTmdbInfo(json: String?, type: String): TmdbInfo? {
             tagline = o.text("tagline"),
             year = o.text(if (isTv) "first_air_date" else "release_date").take(4),
             runtimeMinutes = if (isTv) o.optJSONArray("episode_run_time")?.optInt(0) ?: 0 else o.optInt("runtime"),
-            genres = o.optJSONArray("genres").objects().map { it.text("name") }.filter { it.isNotBlank() },
+            genres = o.optJSONArray("genres").objects().map { it.text("name") }.filter { it.isNotBlank() }
+                .map { TV_GENRES_IN_SPANISH[it] ?: it },
             voteAverage = o.optDouble("vote_average", 0.0).takeIf { !it.isNaN() && it > 0 },
             directors = if (isTv) {
                 o.optJSONArray("created_by").objects().map { it.text("name") }
