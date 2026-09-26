@@ -44,13 +44,33 @@ import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.ui.SubtitleView
+import com.arkiv.player.playback.MpegTs
 import com.arkiv.player.playback.SourceKind
+import com.arkiv.player.playback.TsDurationProbe
 import com.arkiv.player.playback.fallbackRenderers
 import com.arkiv.player.ui.rememberGraph
 import kotlinx.coroutines.delay
 
 private const val TAG = "StreamExo"
+
+/**
+ * How many bytes at each end of a progressive MPEG-TS ExoPlayer scans for a PCR.
+ *
+ * TS carries no duration in a header: ExoPlayer reads the first PCR and the last one and subtracts,
+ * and only when it gets a duration does it build a seek map. media3's default window is 112 800
+ * bytes (600 packets). Some Magis titles end their video well before their audio -- measured, a
+ * movie with three audio tracks whose video stops 224 096 bytes before the end of the file -- and
+ * since the PCR rides on the video, the default window at the tail held none. The read then gave up
+ * without a word: `dur = TIME_UNSET`, `seekable = false`, and every seek restarted the film from
+ * byte 0 while the bar (range 0..1 without a duration) sat full.
+ *
+ * As wide as [ArchiveCacheProxy]'s hot tail and no wider: that tail is what the proxy answers from
+ * memory, and a window reaching past it would send ExoPlayer's first tail read to a CDN that takes
+ * 0.2 s to 20 s per range. A whole number of packets, for the same reason the default is.
+ */
+internal const val STREAM_TS_SEARCH_BYTES = (TsDurationProbe.PROBE_BYTES / MpegTs.PACKET) * MpegTs.PACKET
 
 /**
  * Plays a Magis VOD stream or a plugin stream using ExoPlayer.
@@ -161,7 +181,12 @@ internal fun StreamExoPlayer(
             .build()
 
         ExoPlayer.Builder(context, fallbackRenderers(context))
-            .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory))
+            .setMediaSourceFactory(
+                DefaultMediaSourceFactory(
+                    httpFactory,
+                    DefaultExtractorsFactory().setTsExtractorTimestampSearchBytes(STREAM_TS_SEARCH_BYTES),
+                ),
+            )
             .setLoadControl(loadControl)
             .build()
             .also { player ->
