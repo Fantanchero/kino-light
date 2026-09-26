@@ -123,6 +123,7 @@ fun ArkivTvRoot(
                 onOpenCategorias = { navController.navigate("categorias") },
                 onOpenCategoriasHome = { navController.navigate("categorias_home") },
                 onOpenMagis = { openMagis(it) },
+                onOpenTitleRoute = { route -> navController.navigate(route) { launchSingleTop = true } },
                 onBrowseMagisRow = { rowId, title ->
                     navController.navigate("magis_row/$rowId?title=${android.net.Uri.encode(title)}")
                 },
@@ -306,7 +307,7 @@ fun ArkivTvRoot(
             if (target != null) {
                 TvPluginMoreScreen(
                     target = target,
-                    onPlayEpisode = { goToPlayer(it) },
+                    onOpenTitleRoute = { route -> navController.navigate(route) { launchSingleTop = true } },
                     onOpenPluginSettings = { id -> navController.navigate("plugin_config/${Uri.encode(id)}") },
                     onBack = { navController.popBackStack() },
                 )

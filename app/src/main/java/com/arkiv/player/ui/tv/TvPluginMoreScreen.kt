@@ -23,16 +23,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -43,29 +39,22 @@ import androidx.tv.material3.Button
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import com.arkiv.player.data.gateway.GatewayResult
-import com.arkiv.player.data.gateway.toPlaySource
-import com.arkiv.player.ui.catalog.PlaySource
-import com.arkiv.player.ui.catalog.isSeries
 import com.arkiv.player.ui.plugin.PluginMoreTarget
 import com.arkiv.player.ui.plugin.PluginMoreViewModel
 import com.arkiv.player.ui.rememberGraph
-import com.arkiv.player.ui.search.PlaybackResult
-import com.arkiv.player.ui.search.SearchPlayback
 import com.arkiv.player.ui.theme.ArkivBlack
 import com.arkiv.player.ui.theme.ArkivRed
 import com.arkiv.player.ui.theme.ArkivTextSecondary
-import kotlinx.coroutines.launch
 
 /**
  * TV "Ver más" of a plugin row (or a plugin's search): a 4-column grid that asks for the next page
- * when focus reaches its last row. A movie plays; a series opens its chapters over the grid.
+ * when focus reaches its last row. A movie or a series opens its information page.
  */
 @OptIn(ExperimentalTvMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun TvPluginMoreScreen(
     target: PluginMoreTarget,
-    onPlayEpisode: (episodeId: String) -> Unit,
+    onOpenTitleRoute: (String) -> Unit,
     onOpenPluginSettings: (pluginId: String) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -79,12 +68,8 @@ fun TvPluginMoreScreen(
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
         if (vm.state.value.setupPluginId != null) vm.loadMore()
     }
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val playback = remember(graph) { SearchPlayback(graph) }
+    val open = com.arkiv.player.ui.titleinfo.rememberTitleOpener(onOpenRoute = onOpenTitleRoute)
     val navSound = rememberNavSound()
-    var series by remember { mutableStateOf<PlaySource.Plugin?>(null) }
-    var preparing by remember { mutableStateOf(false) }
     val firstFocus = remember { FocusRequester() }
     val actionFocus = remember { FocusRequester() }
     val hasItems = state.items.isNotEmpty()
@@ -92,24 +77,7 @@ fun TvPluginMoreScreen(
         runCatching { if (hasItems) firstFocus.requestFocus() else if (state.error != null) actionFocus.requestFocus() }
     }
 
-    fun done(result: PlaybackResult) {
-        preparing = false
-        when (result) {
-            is PlaybackResult.Ready -> onPlayEpisode(result.episodeId)
-            is PlaybackResult.Failed -> android.widget.Toast.makeText(context, result.message, android.widget.Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    fun open(result: GatewayResult) {
-        if (preparing) return
-        val source = result.toPlaySource() as? PlaySource.Plugin ?: return
-        if (source.isSeries()) { series = source; return }
-        preparing = true
-        scope.launch { done(playback.playPlugin(result)) }
-    }
-
-    BackHandler(enabled = series == null) { onBack() }
-    BackHandler(enabled = series != null) { series = null }
+    BackHandler { onBack() }
 
     Box(Modifier.fillMaxSize().background(ArkivBlack)) {
         Column(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 28.dp)) {
@@ -175,20 +143,6 @@ fun TvPluginMoreScreen(
                     footer == TvMoreFooter.LOADING -> CircularProgressIndicator(color = ArkivRed, strokeWidth = 2.dp, modifier = Modifier.size(24.dp).align(Alignment.Center))
                     else -> Text("No hay nada más aquí", color = ArkivTextSecondary, modifier = Modifier.align(Alignment.Center))
                 }
-            }
-        }
-        series?.let { open ->
-            Box(Modifier.fillMaxSize().background(ArkivBlack)) {
-                TvPluginChapters(
-                    source = open,
-                    posterUrl = open.result.extra["poster"].orEmpty(),
-                    preparing = preparing,
-                    onChoose = { save ->
-                        series = null
-                        preparing = true
-                        scope.launch { done(save()) }
-                    },
-                )
             }
         }
     }

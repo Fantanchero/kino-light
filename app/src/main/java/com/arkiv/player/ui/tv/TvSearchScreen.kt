@@ -89,6 +89,7 @@ import com.arkiv.player.ui.theme.ArkivRed
 import com.arkiv.player.ui.theme.ArkivSurfaceHigh
 import com.arkiv.player.ui.theme.ArkivTextPrimary
 import com.arkiv.player.ui.theme.ArkivTextSecondary
+import com.arkiv.player.ui.titleinfo.TITLE_OPEN_ERROR
 import com.arkiv.player.ui.titleinfo.titleRoute
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -163,8 +164,6 @@ fun TvSearchScreen(
     // chapter list only calls `playback.playDituSeason`, so a Caracol chapter never falls into
     // Magis's save path.
     var dituSeasonFor by remember { mutableStateOf<com.arkiv.player.data.gateway.GatewayResult?>(null) }
-    // Chosen plugin series: the Caracol path, saved through `playback.playPluginSeason`.
-    var pluginSeasonFor by remember { mutableStateOf<PlaySource.Plugin?>(null) }
 
     // The chosen card's "enriched" metadata, to save the real title/poster — same criterion as
     // SearchScreen (phone).
@@ -179,10 +178,10 @@ fun TvSearchScreen(
         }
     }
 
-    fun openMagisTitle(r: com.arkiv.player.data.gateway.GatewayResult) {
-        // Movie or series, a Magis title opens its info page.
+    fun openTitle(r: com.arkiv.player.data.gateway.GatewayResult) {
+        // Movie or series, a Magis or plugin title opens its info page.
         val route = titleRoute(r)
-        if (route != null) onOpenTitle(route) else playError = "No se pudo abrir este título."
+        if (route != null) onOpenTitle(route) else playError = TITLE_OPEN_ERROR
     }
 
     fun playDituResult(r: com.arkiv.player.data.gateway.GatewayResult) {
@@ -190,20 +189,15 @@ fun TvSearchScreen(
         scope.launch { applyResult(playback.playDitu(r)) }
     }
 
-    fun playPluginResult(r: com.arkiv.player.data.gateway.GatewayResult) {
-        preparing = true; playError = null
-        scope.launch { applyResult(playback.playPlugin(r)) }
-    }
-
     fun playResult(source: PlaySource) = when (source) {
-        is PlaySource.Magis -> openMagisTitle(source.result)
+        is PlaySource.Magis -> openTitle(source.result)
         is PlaySource.Ditu ->
             if (source.isSeries()) {
                 dituSeasonFor = source.result
             } else {
                 playDituResult(source.result)
             }
-        is PlaySource.Plugin -> if (source.isSeries()) pluginSeasonFor = source else playPluginResult(source.result)
+        is PlaySource.Plugin -> openTitle(source.result)
     }
 
     // Search does NOT fire on every keystroke: with the remote, each letter cost a full network
@@ -313,12 +307,11 @@ fun TvSearchScreen(
     }
 
     // In REFINE/RESULTS, back steps one phase back within the wizard; in the titles phase, back
-    // exits the screen. With a series' chapters open inside RESULTS (Magis, Caracol or a plugin), back
-    // goes to the source list first (doesn't exit the phase).
+    // exits the screen. With a Caracol series' chapters open inside RESULTS, back goes to the source
+    // list first (doesn't exit the phase).
     BackHandler {
         when {
             phase == SearchPhase.RESULTS && dituSeasonFor != null -> dituSeasonFor = null
-            phase == SearchPhase.RESULTS && pluginSeasonFor != null -> pluginSeasonFor = null
             phase != SearchPhase.QUERY -> vm.back()
             else -> onBack()
         }
@@ -495,7 +488,6 @@ fun TvSearchScreen(
             // series opens TvMagisSeasonContent (chapter list) instead of playing.
             SearchPhase.RESULTS -> {
                 val currentDitu = dituSeasonFor
-                val currentPlugin = pluginSeasonFor
                 if (currentDitu != null) {
                     TvCaracolChapters(
                         series = currentDitu,
@@ -503,17 +495,6 @@ fun TvSearchScreen(
                         preparing = preparing,
                         onChoose = { save ->
                             dituSeasonFor = null
-                            preparing = true; playError = null
-                            scope.launch { applyResult(save()) }
-                        },
-                    )
-                } else if (currentPlugin != null) {
-                    TvPluginChapters(
-                        source = currentPlugin,
-                        posterUrl = currentPlugin.result.extra["poster"].orEmpty().ifBlank { resultPoster },
-                        preparing = preparing,
-                        onChoose = { save ->
-                            pluginSeasonFor = null
                             preparing = true; playError = null
                             scope.launch { applyResult(save()) }
                         },
@@ -1276,30 +1257,6 @@ internal fun TvCaracolChapters(
         },
         onSaveAll = null,
         label = "Caracol",
-    )
-}
-
-/** A plugin series' chapters on TV: [TvCaracolChapters] with the plugin's name, saving through `playPluginSeason`. */
-@Composable
-internal fun TvPluginChapters(
-    source: PlaySource.Plugin,
-    posterUrl: String,
-    preparing: Boolean,
-    onChoose: (save: suspend () -> PlaybackResult) -> Unit,
-) {
-    val graph = rememberGraph()
-    val playback = remember { SearchPlayback(graph) }
-    TvMagisSeasonContent(
-        season = source.result,
-        // The composed source: with a plg1: ref, `episodesWithSeries` reaches the plugin.
-        client = graph.contentSource,
-        posterUrl = posterUrl,
-        preparing = preparing,
-        onPlayOne = { chapters, chapter, data ->
-            onChoose { playback.playPluginSeason(source.result, chapters, chapter, data) }
-        },
-        onSaveAll = null,
-        label = source.pluginName,
     )
 }
 

@@ -1,6 +1,5 @@
 package com.arkiv.player.ui.tv
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.CubicBezierEasing
@@ -90,10 +89,8 @@ import com.arkiv.player.data.db.LiveChannelCacheEntity
 import com.arkiv.player.data.db.RecommendationEntity
 import com.arkiv.player.data.gateway.CatalogItem
 import com.arkiv.player.data.gateway.LiveChannel
-import com.arkiv.player.data.gateway.toPlaySource
 import com.arkiv.player.thumbnails.ThumbnailChoice
 import com.arkiv.player.ui.home.HomeViewModel
-import com.arkiv.player.ui.catalog.isSeries
 import com.arkiv.player.ui.home.homeMeta
 import com.arkiv.player.ui.home.magisFeatured
 import com.arkiv.player.ui.live.deviceCountry
@@ -271,6 +268,8 @@ fun TvHomeScreen(
     onOpenCategoriasHome: () -> Unit,
     /** A Magis card was picked: its info page opens (see ArkivTvRoot.openMagis). */
     onOpenMagis: (com.arkiv.player.data.gateway.CatalogItem) -> Unit,
+    /** A plugin card was picked: the route of its info page (see `titleRoute`). */
+    onOpenTitleRoute: (String) -> Unit,
     /** "Ver todo" of a Magis row. */
     onBrowseMagisRow: (rowId: String, title: String) -> Unit,
     /** "Ver más" of a plugin row that carries a `ref` (the plugin declares `browse`). */
@@ -439,44 +438,7 @@ fun TvHomeScreen(
     }
 
     val pluginRows by vm.pluginRows.collectAsStateWithLifecycle()
-    val pluginPlayback = remember(graph) { com.arkiv.player.ui.search.SearchPlayback(graph) }
-    // A plugin series opened from Home: its chapters cover Home until one is picked or Back.
-    var pluginSeries by remember { mutableStateOf<com.arkiv.player.ui.catalog.PlaySource.Plugin?>(null) }
-    var preparingPlugin by remember { mutableStateOf(false) }
-
-    fun onPluginPlayback(result: com.arkiv.player.ui.search.PlaybackResult) {
-        preparingPlugin = false
-        when (result) {
-            is com.arkiv.player.ui.search.PlaybackResult.Ready -> onPlayEpisode(result.episodeId)
-            is com.arkiv.player.ui.search.PlaybackResult.Failed ->
-                android.widget.Toast.makeText(context, result.message, android.widget.Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    fun openPluginItem(result: com.arkiv.player.data.gateway.GatewayResult) {
-        if (preparingPlugin) return
-        val source = result.toPlaySource() as? com.arkiv.player.ui.catalog.PlaySource.Plugin ?: return
-        if (source.isSeries()) { pluginSeries = source; return }
-        preparingPlugin = true
-        scope.launch { onPluginPlayback(pluginPlayback.playPlugin(result)) }
-    }
-
-    BackHandler(enabled = pluginSeries != null) { pluginSeries = null }
-    pluginSeries?.let { open ->
-        Box(Modifier.fillMaxSize().background(ArkivBlack)) {
-            TvPluginChapters(
-                source = open,
-                posterUrl = open.result.extra["poster"].orEmpty(),
-                preparing = preparingPlugin,
-                onChoose = { save ->
-                    pluginSeries = null
-                    preparingPlugin = true
-                    scope.launch { onPluginPlayback(save()) }
-                },
-            )
-        }
-        return
-    }
+    val openPluginItem = com.arkiv.player.ui.titleinfo.rememberTitleOpener(onOpenRoute = onOpenTitleRoute)
 
     // The first card gets focus on opening, so the hero/background reflect something right away.
     // The key is that card's IDENTITY, not "is there data yet?": "continue watching" and the
@@ -560,7 +522,10 @@ fun TvHomeScreen(
             // The Magis rows arrive from a cached fetch: give them a moment. Then walk the rows
             // list down until the card's row is composed and its requester attached — a card that is
             // not composed cannot take focus, and the count of rows above it is not fixed.
-            withTimeoutOrNull(3_000) { snapshotFlow { magisRows }.first { it != null } }
+            withTimeoutOrNull(3_000) {
+                snapshotFlow { if (cardToRestore.startsWith("plugin-")) pluginRows.isNotEmpty() else magisRows != null }
+                    .first { it }
+            }
             var row = 0
             repeat(40) {
                 if (cardRestored) return@repeat
@@ -990,17 +955,22 @@ fun TvHomeScreen(
                                 ) {
                                     items(row.items, key = { "${row.pluginId}-${row.id}-${it.extra["pluginItemId"]}" }) { item ->
                                         val art = item.extra["backdrop"].orEmpty().ifBlank { item.extra["poster"].orEmpty() }.ifBlank { null }
+                                        val cardKey = "plugin-${row.pluginId}-${row.id}-${item.extra["pluginItemId"]}"
                                         TvLandscapeCard(
                                             title = item.title,
                                             imageUrl = art,
                                             cardHeight = cardHeight,
+                                            modifier = if (cardKey == cardToRestore) Modifier.focusRequester(returnFocus) else Modifier,
                                             badge = row.pluginName,
                                             badgeColor = androidx.compose.ui.graphics.Color(row.color),
                                             onFocus = {
                                                 navSound()
                                                 featured = Featured(item.title, row.pluginName, art, item.extra["overview"].orEmpty())
                                             },
-                                            onClick = { openPluginItem(item) },
+                                            onClick = {
+                                                returnKey = cardKey
+                                                openPluginItem(item)
+                                            },
                                         )
                                     }
                                     val moreRef = row.ref
