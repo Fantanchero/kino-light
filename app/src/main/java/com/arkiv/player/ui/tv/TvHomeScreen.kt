@@ -49,6 +49,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -118,7 +119,9 @@ import com.arkiv.player.ui.theme.ArkivSurfaceHigh
 import com.arkiv.player.ui.theme.ArkivTextSecondary
 import kotlin.math.abs
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * What the background hero shows. [meta] is the data line highlighted in white below the title:
@@ -266,7 +269,7 @@ fun TvHomeScreen(
     onOpenCategorias: () -> Unit,
     /** Listing of every home row as per-category shortcuts. */
     onOpenCategoriasHome: () -> Unit,
-    /** A Magis card was picked: a movie plays, a series opens its chapters (see ArkivTvRoot.openMagis). */
+    /** A Magis card was picked: its info page opens (see ArkivTvRoot.openMagis). */
     onOpenMagis: (com.arkiv.player.data.gateway.CatalogItem) -> Unit,
     /** "Ver todo" of a Magis row. */
     onBrowseMagisRow: (rowId: String, title: String) -> Unit,
@@ -488,6 +491,15 @@ fun TvHomeScreen(
     // land there (the scroll wasn't a consequence of lost focus: it was its cause).
     val rowsListState = rememberLazyListState()
 
+    // The Magis card whose info page was opened from here (`"<rowId>-<itemId>"`), so Back lands on
+    // it again instead of on the top bar. Saveable: it has to outlive this composition, which
+    // leaves when the page opens. Read once per visit into `cardToRestore` and cleared right away,
+    // so it only applies to the Back that follows the tap and never to a later visit.
+    var returnKey by rememberSaveable { mutableStateOf<String?>(null) }
+    val cardToRestore = remember { returnKey }
+    LaunchedEffect(Unit) { returnKey = null }
+    val returnFocus = remember { FocusRequester() }
+
     /**
      * Snaps the scroll to the row boundary when it stops.
      *
@@ -521,7 +533,8 @@ fun TvHomeScreen(
     // since.
     var channelsRowAppeared by remember { mutableStateOf(false) }
     LaunchedEffect(channelsRow.isNotEmpty()) {
-        if (channelsRow.isNotEmpty() && !channelsRowAppeared) {
+        // Not when coming back to a card: that scroll would take it out of view.
+        if (channelsRow.isNotEmpty() && !channelsRowAppeared && cardToRestore == null) {
             channelsRowAppeared = true
             runCatching { rowsListState.scrollToItem(0) }
         }
@@ -538,8 +551,30 @@ fun TvHomeScreen(
     // nothing's been started.
     val barFocus = remember { FocusRequester() }
     val firstFocusKey = continueWatching.firstOrNull()?.episodeId
+    // True once focus is back on the card `cardToRestore` names: from then on the default landing
+    // below must not take it away (a late "Continuar viendo" changes `firstFocusKey`).
+    var cardRestored by remember { mutableStateOf(false) }
     LaunchedEffect(firstFocusKey) {
         delay(200)
+        if (cardToRestore != null && !cardRestored) {
+            // The Magis rows arrive from a cached fetch: give them a moment. Then walk the rows
+            // list down until the card's row is composed and its requester attached — a card that is
+            // not composed cannot take focus, and the count of rows above it is not fixed.
+            withTimeoutOrNull(3_000) { snapshotFlow { magisRows }.first { it != null } }
+            var row = 0
+            repeat(40) {
+                if (cardRestored) return@repeat
+                if (runCatching { returnFocus.requestFocus() }.isSuccess) {
+                    cardRestored = true
+                    return@repeat
+                }
+                val last = (rowsListState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
+                runCatching { rowsListState.scrollToItem(row.coerceAtMost(last)) }
+                row++
+                delay(60)
+            }
+        }
+        if (cardRestored) return@LaunchedEffect
         var landed = false
         repeat(20) {
             if (landed) return@repeat
@@ -912,15 +947,20 @@ fun TvHomeScreen(
                                     items(row.shown, key = { "${row.id}-${it.id}" }) { item ->
                                         // The portal's 1920×1080 landscape art; the portrait icon only if missing.
                                         val art = item.backdrop ?: item.poster
+                                        val cardKey = "${row.id}-${item.id}"
                                         TvLandscapeCard(
                                             title = item.title,
                                             imageUrl = art,
                                             cardHeight = cardHeight,
+                                            modifier = if (cardKey == cardToRestore) Modifier.focusRequester(returnFocus) else Modifier,
                                             onFocus = {
                                                 navSound()
                                                 featured = magisCardFeatured(item)
                                             },
-                                            onClick = { onOpenMagis(item) },
+                                            onClick = {
+                                                returnKey = cardKey
+                                                onOpenMagis(item)
+                                            },
                                         )
                                     }
                                     item(key = "${row.id}-ver-mas") {

@@ -26,8 +26,8 @@ private fun enc(value: String): String = URLEncoder.encode(value, "UTF-8").repla
 
 /**
  * The route of a Magis card's info page, or null when the card has no id (a blank id would make
- * `title/` and crash Navigation). Same idea as the old `magisSeriesRoute`: everything the page
- * paints first travels in the route.
+ * `title/` and crash Navigation). Everything the page paints first travels in the route, so it
+ * survives the system killing the process while the player is on top.
  */
 fun titleRoute(item: CatalogItem): String? {
     if (item.id.isBlank()) return null

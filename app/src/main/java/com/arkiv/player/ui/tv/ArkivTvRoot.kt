@@ -19,8 +19,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import com.arkiv.player.playback.MagisEphemeral
-import com.arkiv.player.ui.home.isMagisSeries
-import com.arkiv.player.ui.home.toGatewayResult
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -33,6 +31,10 @@ import androidx.navigation.navArgument
 import com.arkiv.player.ui.player.PlayerScreen
 import com.arkiv.player.ui.rememberGraph
 import com.arkiv.player.ui.theme.ArkivBlack
+import com.arkiv.player.ui.titleinfo.TITLE_ROUTE
+import com.arkiv.player.ui.titleinfo.titleItemFrom
+import com.arkiv.player.ui.titleinfo.titleRoute
+import com.arkiv.player.ui.titleinfo.titleRouteArguments
 
 @Composable
 fun ArkivTvRoot(
@@ -70,22 +72,9 @@ fun ArkivTvRoot(
         navController.navigate("player/${Uri.encode(id)}") { launchSingleTop = true }
     }
 
-    val magisScope = rememberCoroutineScope()
-    val magisPlayback = remember(graph) { com.arkiv.player.ui.search.SearchPlayback(graph) }
-
-    /** A home Magis card: a series opens its chapters, a movie plays (saved like a search result). */
+    /** A Magis card, movie or series: opens its info page. */
     fun openMagis(item: com.arkiv.player.data.gateway.CatalogItem) {
-        if (item.isMagisSeries) {
-            navController.navigate(magisSeriesRoute(item))
-            return
-        }
-        magisScope.launch {
-            when (val r = magisPlayback.playMagis(item.toGatewayResult())) {
-                is com.arkiv.player.ui.search.PlaybackResult.Ready -> goToPlayer(r.episodeId)
-                is com.arkiv.player.ui.search.PlaybackResult.Failed ->
-                    Toast.makeText(context, r.message, Toast.LENGTH_SHORT).show()
-            }
-        }
+        titleRoute(item)?.let { route -> navController.navigate(route) }
     }
 
     // Most Magis live channels play on an anonymous session (verified against the portal), so we no
@@ -150,6 +139,7 @@ fun ArkivTvRoot(
             TvSearchScreen(
                 onPlay = { goToPlayer(it) },
                 onBack = { navController.popBackStack() },
+                onOpenTitle = { route -> navController.navigate(route) },
                 onBrowseRow = { rowId, title ->
                     navController.navigate("row_browse/$rowId?title=${android.net.Uri.encode(title)}")
                 },
@@ -197,30 +187,15 @@ fun ArkivTvRoot(
                 onBack = { navController.popBackStack() },
             )
         }
-        composable(
-            MAGIS_SERIES_ROUTE,
-            arguments = listOf(
-                navArgument("id") { type = NavType.StringType },
-                navArgument("type") { type = NavType.StringType; defaultValue = "teleplay" },
-                navArgument("title") { type = NavType.StringType; defaultValue = "" },
-                navArgument("poster") { type = NavType.StringType; defaultValue = "" },
-                navArgument("backdrop") { type = NavType.StringType; defaultValue = "" },
-                navArgument("count") { type = NavType.IntType; defaultValue = 0 },
-            ),
-        ) { entry ->
-            val args = entry.arguments
-            TvMagisSeriesScreen(
-                item = magisSeriesItem(
-                    id = args?.getString("id").orEmpty(),
-                    type = args?.getString("type").orEmpty(),
-                    title = args?.getString("title").orEmpty(),
-                    poster = args?.getString("poster").orEmpty(),
-                    backdrop = args?.getString("backdrop").orEmpty(),
-                    count = args?.getInt("count") ?: 0,
-                ),
-                onPlay = { goToPlayer(it) },
-                onBack = { navController.popBackStack() },
-            )
+        composable(TITLE_ROUTE, arguments = titleRouteArguments) { entry ->
+            val item = titleItemFrom { entry.arguments?.getString(it) }
+            if (item != null) {
+                TvTitleInfoScreen(
+                    item = item,
+                    onPlay = { goToPlayer(it) },
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
         composable("categorias_home") {
             TvCategoriesScreen(
